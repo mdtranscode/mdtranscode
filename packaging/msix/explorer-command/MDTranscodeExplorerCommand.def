@@ -1,0 +1,4 @@
+LIBRARY "MDTranscodeExplorerCommand"
+EXPORTS
+    DllCanUnloadNow
+    DllGetClassObject
