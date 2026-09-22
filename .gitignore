@@ -1,0 +1,70 @@
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work.sum
+
+# Build output
+/bin/
+/build/
+/dist/
+/out/
+
+# Secrets and credentials
+.env
+.env.*
+secrets/
+*.pfx
+*.p12
+*.pem
+*.key
+
+# Local configuration
+*.local.json
+config.local.*
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Editors / IDEs
+.vs/
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# Logs
+*.log
+
+# MSIX build artifacts
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+
+# Local workspace-only files
+.local/
+
+# Wails generated/build output
+/windows/build/*
+!/windows/build/appicon.png
+!/windows/build/windows/
+/windows/build/windows/*
+!/windows/build/windows/wails.exe.manifest
+!/windows/build/windows/installer/
+/windows/build/windows/installer/*
+!/windows/build/windows/installer/project.nsi
+!/windows/build/windows/installer/mdtranscode_associations.nsh
+/windows/build/bin/
+/windows/frontend/wailsjs/

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "MDTranscode",
+  "outputfilename": "MDTranscode",
+  "assetdir": "frontend/dist",
+  "frontend:dir": "frontend",
+  "build:dir": "build",
+  "author": {
+    "name": "MDTranscode",
+    "email": "hello@mdtransco.de"
+  },
+  "info": {
+    "companyName": "MDTranscode",
+    "productName": "MDTranscode",
+    "productVersion": "0.6.0",
+    "copyright": "Copyright 2026 MDTranscode",
+    "comments": "Turn Markdown into professional documents.",
+    "fileAssociations": [
+      {
+        "ext": "md",
+        "name": "MDTranscode.Markdown",
+        "description": "Markdown Document",
+        "iconName": "appicon",
+        "role": "Editor"
+      },
+      {
+        "ext": "markdown",
+        "name": "MDTranscode.Markdown",
+        "description": "Markdown Document",
+        "iconName": "appicon",
+        "role": "Editor"
+      }
+    ]
+  }
+}
