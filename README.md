@@ -42,3 +42,11 @@ Windows development requires Go plus Wails v2.15.0. NSIS is required to build th
 MDTranscode source is licensed under the Mozilla Public License 2.0. See `LICENSE` and `NOTICE.md`.
 
 Project website: https://mdtransco.de
+
+## Install from Microsoft Store
+
+The signed Windows package is available from the Microsoft Store:
+
+    https://apps.microsoft.com/detail/9MXCQXBPS8K1
+
+The Store package contains the same functional product as the public source and provides the simplest Windows install/update experience.
