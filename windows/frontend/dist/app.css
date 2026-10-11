@@ -805,3 +805,11 @@ button {
     padding: 0 12px;
   }
 }
+
+/* Document find: shared by Preview and Source views. */
+.find-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 9px 16px; border-bottom: 1px solid var(--border, #d4d9e3); }
+.find-bar.hidden { display: none; }
+.find-bar input { flex: 1; min-width: 125px; max-width: 370px; padding: 7px 9px; border: 1px solid #9ca6b7; border-radius: 5px; }
+.find-bar #findCount { white-space: nowrap; font-size: 0.85rem; }
+.md-find-match { background: #ffe78a; color: #172033; border-radius: 2px; }
+.md-find-match.current { background: #ffae45; outline: 2px solid #ad5a00; }

@@ -3,6 +3,7 @@
     file: null,
     toastTimer: null,
     view: "preview",
+    find: { matches: [], active: -1 },
     settings: {
       defaultView: "preview",
       rememberRecentFiles: true,
@@ -13,6 +14,9 @@
   const elements = {};
 
   document.addEventListener("DOMContentLoaded", async () => {
+    for (const id of ["findButton", "findBar", "findInput", "findCount", "findPrevious", "findNext", "findClose"]) {
+      elements[id] = document.getElementById(id);
+    }
     elements.settingsButton = document.getElementById("settingsButton");
     elements.openButton = document.getElementById("openButton");
     elements.exportButton = document.getElementById("exportButton");
@@ -47,6 +51,17 @@
     elements.rememberRecentCheckbox = document.getElementById("rememberRecentCheckbox");
     elements.recentLimitSelect = document.getElementById("recentLimitSelect");
 
+    elements.findButton.addEventListener("click", openFind);
+    elements.findClose.addEventListener("click", closeFind);
+    elements.findInput.addEventListener("input", updateFind);
+    elements.findNext.addEventListener("click", () => stepFind(1));
+    elements.findPrevious.addEventListener("click", () => stepFind(-1));
+    elements.findInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        stepFind(event.shiftKey ? -1 : 1);
+      }
+    });
     elements.settingsButton.addEventListener("click", openSettings);
     elements.openButton.addEventListener("click", openMarkdown);
     elements.exportButton.addEventListener("click", exportDOCX);
@@ -66,6 +81,16 @@
       }
     });
     document.addEventListener("keydown", (event) => {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        if (state.file && elements.settingsModal.classList.contains("hidden")) openFind();
+        return;
+      }
+      if (event.key === "Escape" && !elements.findBar.classList.contains("hidden")) {
+        event.preventDefault();
+        closeFind();
+        return;
+      }
       if (event.key === "Escape" && !elements.settingsModal.classList.contains("hidden")) {
         closeSettings();
       }
@@ -240,7 +265,9 @@
   }
 
   function renderFile(file) {
+    clearFindMarks();
     state.file = file;
+    elements.findButton.disabled = false;
     elements.emptyDetails.classList.add("hidden");
     elements.fileDetails.classList.remove("hidden");
     elements.exportButton.disabled = false;
@@ -255,6 +282,7 @@
     renderOutline(file.outline || []);
     elements.previewScroll.scrollTop = 0;
     setView(state.settings.defaultView || "preview");
+    if (!elements.findBar.classList.contains("hidden")) updateFind();
     setStatus(`Opened ${file.name}`);
   }
 
@@ -316,6 +344,88 @@
     elements.previewTab.setAttribute("aria-selected", String(previewActive));
     elements.sourceTab.setAttribute("aria-selected", String(!previewActive));
     elements.viewLabel.textContent = previewActive ? "Rendered preview" : "Markdown source";
+    if (!elements.findBar.classList.contains("hidden")) updateFind();
+  }
+
+  function openFind() {
+    if (!state.file) return;
+    elements.findBar.classList.remove("hidden");
+    elements.findInput.focus();
+    elements.findInput.select();
+    updateFind();
+  }
+
+  function closeFind() {
+    elements.findBar.classList.add("hidden");
+    clearFindMarks();
+    elements.findButton.focus();
+  }
+
+  function clearFindMarks() {
+    for (const root of [elements.previewContent, elements.sourceView]) {
+      if (!root) continue;
+      root.querySelectorAll("mark.md-find-match").forEach((mark) => {
+        mark.replaceWith(document.createTextNode(mark.textContent));
+      });
+      root.normalize();
+    }
+    state.find.matches = [];
+    state.find.active = -1;
+  }
+
+  function updateFind() {
+    clearFindMarks();
+    const term = elements.findInput.value;
+    if (!state.file || !term) {
+      elements.findCount.textContent = "0 matches";
+      elements.findPrevious.disabled = true;
+      elements.findNext.disabled = true;
+      return;
+    }
+    const root = state.view === "preview" ? elements.previewContent : elements.sourceView;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!node.nodeValue || !node.nodeValue.toLocaleLowerCase().includes(term.toLocaleLowerCase())) return NodeFilter.FILTER_REJECT;
+        if (node.parentElement.closest("script, style, mark")) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    for (const node of nodes) {
+      const value = node.nodeValue;
+      const lower = value.toLocaleLowerCase();
+      const query = term.toLocaleLowerCase();
+      const fragment = document.createDocumentFragment();
+      let pos = 0;
+      let match;
+      while ((match = lower.indexOf(query, pos)) !== -1) {
+        fragment.append(document.createTextNode(value.slice(pos, match)));
+        const mark = document.createElement("mark");
+        mark.className = "md-find-match";
+        mark.textContent = value.slice(match, match + term.length);
+        fragment.append(mark);
+        state.find.matches.push(mark);
+        pos = match + term.length;
+      }
+      fragment.append(document.createTextNode(value.slice(pos)));
+      node.replaceWith(fragment);
+    }
+    elements.findPrevious.disabled = state.find.matches.length === 0;
+    elements.findNext.disabled = state.find.matches.length === 0;
+    if (state.find.matches.length) stepFind(1);
+    else elements.findCount.textContent = "0 matches";
+  }
+
+  function stepFind(direction) {
+    const matches = state.find.matches;
+    if (!matches.length) return;
+    if (state.find.active >= 0) matches[state.find.active].classList.remove("current");
+    state.find.active = (state.find.active + direction + matches.length) % matches.length;
+    const mark = matches[state.find.active];
+    mark.classList.add("current");
+    mark.scrollIntoView({ block: "center", behavior: "auto" });
+    elements.findCount.textContent = `${state.find.active + 1} of ${matches.length}`;
   }
 
   function openSettings() {
