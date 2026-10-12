@@ -10,6 +10,7 @@ Current capabilities include:
 - `.md` / `.markdown` Open With integration
 - Explorer `Convert to Word with MDTranscode`
 - non-overwriting file conversion
+- optional foreground Folder Watcher for automatic Markdown-to-DOCX conversion
 
 The conversion pipeline is intentionally shared across the CLI and Windows application:
 
@@ -45,8 +46,6 @@ Project website: https://mdtransco.de
 
 ## Install from Microsoft Store
 
-The signed Windows package is available from the Microsoft Store:
+[Get MDTranscode from the Microsoft Store](https://apps.microsoft.com/detail/9MXCQXBPS8K1)
 
-    https://apps.microsoft.com/detail/9MXCQXBPS8K1
-
-The Store package contains the same functional product as the public source and provides the simplest Windows install/update experience.
+The Microsoft Store offers signed Windows installation and automatic updates. During certification, Store updates may lag behind the latest public source. Folder monitoring in the 1.0.5.0 source requires the app window to remain open; Windows startup and system-tray background operation are planned for a separate future iteration.
