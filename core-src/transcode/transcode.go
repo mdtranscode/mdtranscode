@@ -9,11 +9,13 @@ import (
 
 	"github.com/mdtranscode/mdtranscode/core-src/markdown"
 	"github.com/mdtranscode/mdtranscode/core-src/renderer/docx"
+	"github.com/mdtranscode/mdtranscode/core-src/renderer/pdf"
 )
 
 const (
-	// FormatDOCX is the currently supported file conversion format.
+	// FormatDOCX preserves the existing Word output pipeline.
 	FormatDOCX = "docx"
+	FormatPDF  = "pdf"
 )
 
 // FileOptions describes one Markdown file conversion.
@@ -23,6 +25,7 @@ type FileOptions struct {
 	Format     string
 	Title      string
 	Creator    string
+	PDF        pdf.Options
 }
 
 // FileResult describes the resolved paths and format used for a successful conversion.
@@ -46,8 +49,8 @@ func DefaultOutputPath(inputPath, format string) string {
 // ConvertFile reads Markdown from disk and renders it using the Core pipeline.
 func ConvertFile(options FileOptions) (FileResult, error) {
 	format := normalizeFormat(options.Format)
-	if format != FormatDOCX {
-		return FileResult{}, fmt.Errorf("unsupported output format %q; currently supported: docx", format)
+	if format != FormatDOCX && format != FormatPDF {
+		return FileResult{}, fmt.Errorf("unsupported output format %q; supported: docx, pdf", format)
 	}
 	if strings.TrimSpace(options.InputPath) == "" {
 		return FileResult{}, errors.New("input Markdown file is required")
@@ -100,7 +103,17 @@ func ConvertFile(options FileOptions) (FileResult, error) {
 		Creator: creator,
 	}
 
-	if err := docx.WriteFile(parsed, outputAbs, renderOptions); err != nil {
+	if format == FormatPDF {
+		pdfOptions := options.PDF
+		if pdfOptions.PageSize == "" {
+			pdfOptions = pdf.Defaults()
+		}
+		pdfOptions.BaseDir = filepath.Dir(inputAbs)
+		pdfOptions.Title = title
+		if err := pdf.WriteFile(parsed, outputAbs, pdfOptions); err != nil {
+			return FileResult{}, fmt.Errorf("write PDF %q: %w", outputPath, err)
+		}
+	} else if err := docx.WriteFile(parsed, outputAbs, renderOptions); err != nil {
 		return FileResult{}, fmt.Errorf("write DOCX %q: %w", outputPath, err)
 	}
 

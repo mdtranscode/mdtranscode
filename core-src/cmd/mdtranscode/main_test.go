@@ -43,7 +43,7 @@ func TestDefaultOutputPathUsesNativeSeparators(t *testing.T) {
 }
 
 func TestParseArgsRejectsUnsupportedFormat(t *testing.T) {
-	_, _, err := parseArgs([]string{"report.md", "--to", "pdf"})
+	_, _, err := parseArgs([]string{"report.md", "--to", "rtf"})
 	if err == nil || !strings.Contains(err.Error(), "unsupported output format") {
 		t.Fatalf("expected unsupported-format error, got %v", err)
 	}
@@ -141,4 +141,19 @@ var tinyPNG = []byte{
 	0x1f, 0x00, 0x05, 0x00, 0x01, 0xff, 0x89, 0x99,
 	0x3d, 0x1d, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
 	0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+}
+
+func TestCLIParsesPDFOptions(t *testing.T) {
+	options, _, err := parseArgs([]string{"report.md", "--to", "pdf", "--pdf-size", "A4", "--pdf-orientation", "landscape", "--pdf-margin", "15", "--pdf-header", "Quarterly", "--pdf-no-page-numbers", "--pdf-break-h1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.format != "pdf" || options.output != "report.pdf" || options.pdf.PageSize != "A4" || options.pdf.Orientation != "landscape" || options.pdf.MarginLeft != 15 || options.pdf.PageNumbers || !options.pdf.PageBreakBeforeH1 || options.pdf.HeaderText != "Quarterly" {
+		t.Fatalf("PDF CLI options: %+v", options)
+	}
+}
+func TestCLIRejectsBadPDFMargin(t *testing.T) {
+	if _, _, err := parseArgs([]string{"report.md", "--to", "pdf", "--pdf-margin", "0"}); err == nil {
+		t.Fatal("invalid PDF margin accepted")
+	}
 }

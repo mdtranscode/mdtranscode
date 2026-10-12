@@ -14,6 +14,9 @@ namespace {
 // This CLSID is mirrored in the private AppxManifest template.
 const CLSID CLSID_MDTranscodeExplorerCommand =
     {0xa1672651, 0x3944, 0x46cf, {0xa1, 0x38, 0xb4, 0xe1, 0x21, 0x5f, 0x52, 0x80}};
+// Separate CLSID keeps the already-published Word verb completely intact.
+const CLSID CLSID_MDTranscodePDFCommand =
+    {0xb219fb84, 0x6403, 0x4cf5, {0xa9, 0x42, 0xdf, 0xc8, 0x81, 0x5c, 0x22, 0x17}};
 
 HMODULE g_module = nullptr;
 volatile LONG g_objectCount = 0;
@@ -105,7 +108,7 @@ HRESULT GetSingleSelectedPath(IShellItemArray* items, std::wstring* path) {
 
 class ExplorerCommand final : public IExplorerCommand {
 public:
-    ExplorerCommand() : refCount_(1) {
+    explicit ExplorerCommand(bool pdf) : refCount_(1), pdf_(pdf) {
         InterlockedIncrement(&g_objectCount);
     }
 
@@ -137,7 +140,7 @@ public:
     }
 
     IFACEMETHODIMP GetTitle(IShellItemArray*, PWSTR* title) override {
-        return CopyToCoTaskMem(L"Convert to Word with MDTranscode", title);
+        return CopyToCoTaskMem(pdf_ ? L"Convert to PDF with MDTranscode" : L"Convert to Word with MDTranscode", title);
     }
 
     IFACEMETHODIMP GetIcon(IShellItemArray*, PWSTR* icon) override {
@@ -152,14 +155,14 @@ public:
     }
 
     IFACEMETHODIMP GetToolTip(IShellItemArray*, PWSTR* tooltip) override {
-        return CopyToCoTaskMem(L"Create a Word DOCX beside this Markdown file.", tooltip);
+        return CopyToCoTaskMem(pdf_ ? L"Create a PDF beside this Markdown file." : L"Create a Word DOCX beside this Markdown file.", tooltip);
     }
 
     IFACEMETHODIMP GetCanonicalName(GUID* commandName) override {
         if (!commandName) {
             return E_POINTER;
         }
-        *commandName = CLSID_MDTranscodeExplorerCommand;
+        *commandName = pdf_ ? CLSID_MDTranscodePDFCommand : CLSID_MDTranscodeExplorerCommand;
         return S_OK;
     }
 
@@ -198,7 +201,7 @@ public:
 
         // Windows filenames cannot contain a double quote, so quoting the file
         // path is sufficient for the existing --convert-to-docx command parser.
-        std::wstring commandLine = L"\"" + executable + L"\" --convert-to-docx \"" + sourcePath + L"\"";
+        std::wstring commandLine = L"\"" + executable + (pdf_ ? L"\" --convert-to-pdf \"" : L"\" --convert-to-docx \"") + sourcePath + L"\"";
         std::vector<wchar_t> mutableCommandLine(commandLine.begin(), commandLine.end());
         mutableCommandLine.push_back(L'\0');
 
@@ -249,11 +252,12 @@ private:
     }
 
     volatile LONG refCount_;
+    bool pdf_;
 };
 
 class ClassFactory final : public IClassFactory {
 public:
-    ClassFactory() : refCount_(1) {
+    explicit ClassFactory(bool pdf) : refCount_(1), pdf_(pdf) {
         InterlockedIncrement(&g_objectCount);
     }
 
@@ -293,7 +297,7 @@ public:
         }
 
         *object = nullptr;
-        auto* command = new (std::nothrow) ExplorerCommand();
+        auto* command = new (std::nothrow) ExplorerCommand(pdf_);
         if (!command) {
             return E_OUTOFMEMORY;
         }
@@ -317,6 +321,7 @@ private:
         InterlockedDecrement(&g_objectCount);
     }
     volatile LONG refCount_;
+    bool pdf_;
 };
 
 } // namespace
@@ -330,7 +335,7 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
 }
 
 extern "C" HRESULT __stdcall DllGetClassObject(REFCLSID clsid, REFIID iid, void** object) {
-    if (!IsEqualCLSID(clsid, CLSID_MDTranscodeExplorerCommand)) {
+    if (!IsEqualCLSID(clsid, CLSID_MDTranscodeExplorerCommand) && !IsEqualCLSID(clsid, CLSID_MDTranscodePDFCommand)) {
         return CLASS_E_CLASSNOTAVAILABLE;
     }
     if (!object) {
@@ -338,7 +343,7 @@ extern "C" HRESULT __stdcall DllGetClassObject(REFCLSID clsid, REFIID iid, void*
     }
 
     *object = nullptr;
-    auto* factory = new (std::nothrow) ClassFactory();
+    auto* factory = new (std::nothrow) ClassFactory(IsEqualCLSID(clsid, CLSID_MDTranscodePDFCommand));
     if (!factory) {
         return E_OUTOFMEMORY;
     }

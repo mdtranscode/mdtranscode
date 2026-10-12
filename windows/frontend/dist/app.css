@@ -505,6 +505,58 @@ button {
   font-size: 11px;
 }
 
+.status-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.status-main #statusText { flex: 0 0 auto; }
+
+.status-file-link,
+.status-reveal-link {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #245da4;
+  font: inherit;
+  font-weight: 650;
+  padding: 0;
+  cursor: pointer;
+}
+
+.status-file-link {
+  min-width: 0;
+  max-width: 55vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.status-reveal-link {
+  flex: 0 0 auto;
+  border-left: 1px solid #cbd3df;
+  padding-left: 8px;
+}
+
+.status-file-link:hover,
+.status-reveal-link:hover { color: #173b6d; }
+.status-file-link:focus-visible,
+.status-reveal-link:focus-visible {
+  outline: 2px solid #2d70b8;
+  outline-offset: 3px;
+}
+.status-brand { flex-shrink: 0; }
+
+@media (max-width: 600px) {
+  .status-brand { display: none; }
+  .status-file-link { max-width: 44vw; }
+}
+
 .toast {
   position: fixed;
   right: 20px;
@@ -946,3 +998,10 @@ button {
 @media (prefers-reduced-motion: reduce) {
   .preview-view { transition: none; }
 }
+
+/* Iteration 3: compact PDF preferences that remain inside the scrolling settings body. */
+.pdf-settings { border-top:1px solid #dce4ec; padding-top:18px; margin-top:18px; }
+.pdf-settings h3 { margin:0 0 12px; }
+.pdf-settings-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
+.pdf-settings input[type="number"], .pdf-settings input[type="text"] { width:100%;box-sizing:border-box;border:1px solid #c5d2de;border-radius:7px;padding:9px;min-width:0; }
+@media (max-width: 940px) { .topbar .actions {flex-wrap:wrap;justify-content:flex-end;gap:6px;} }

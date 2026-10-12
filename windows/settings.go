@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/mdtranscode/mdtranscode/core-src/renderer/pdf"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,7 +12,7 @@ import (
 )
 
 const (
-	settingsVersion         = 4
+	settingsVersion         = 5
 	defaultRecentFilesLimit = 10
 	minRecentFilesLimit     = 3
 	maxRecentFilesLimit     = 20
@@ -25,6 +26,7 @@ type AppSettings struct {
 	Watcher             WatcherSettings `json:"watcher"`
 	UpdateNotifications bool            `json:"updateNotifications"`
 	CloseToTray         bool            `json:"closeToTray"`
+	PDF                 pdf.Options     `json:"pdf"`
 }
 
 // RecentFile is one recent Markdown document displayed by the Windows shell.
@@ -69,6 +71,7 @@ func defaultPersistedState() persistedState {
 			Watcher:             defaultWatcherSettings(),
 			UpdateNotifications: true,
 			CloseToTray:         true,
+			PDF:                 pdf.Defaults(),
 		},
 	}
 }
@@ -87,6 +90,9 @@ func normalizeSettings(value AppSettings) AppSettings {
 		limit = maxRecentFilesLimit
 	}
 
+	if value.PDF.PageSize == "" {
+		value.PDF = pdf.Defaults()
+	}
 	return AppSettings{
 		DefaultView:         view,
 		RememberRecentFiles: value.RememberRecentFiles,
@@ -94,6 +100,7 @@ func normalizeSettings(value AppSettings) AppSettings {
 		Watcher:             normalizeWatcherSettings(value.Watcher),
 		UpdateNotifications: value.UpdateNotifications,
 		CloseToTray:         value.CloseToTray,
+		PDF:                 value.PDF,
 	}
 }
 
@@ -111,6 +118,9 @@ func normalizePersistedState(value persistedState) persistedState {
 	}
 	if oldVersion < 3 {
 		value.Settings.UpdateNotifications = true
+	}
+	if oldVersion < 5 {
+		value.Settings.PDF = pdf.Defaults()
 	}
 	if oldVersion < 4 {
 		// Existing users keep the current close-to-tray behavior unless

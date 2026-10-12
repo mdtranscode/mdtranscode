@@ -232,3 +232,33 @@ func TestCloseToTrayMigrationDefaultsOnWithoutChangingOtherPreferences(t *testin
 		t.Fatalf("v3 migration changed preferences: %#v", settings)
 	}
 }
+
+func TestPDFSettingsDefaultsAndUpgrade(t *testing.T) {
+	state := defaultPersistedState()
+	if state.Settings.PDF.PageSize != "Letter" || state.Settings.PDF.MarginTop != 19 || !state.Settings.PDF.Bookmarks || !state.Settings.PDF.PageNumbers {
+		t.Fatalf("default PDF options: %+v", state.Settings.PDF)
+	}
+	path := filepath.Join(t.TempDir(), "prefs.json")
+	old := `{"version":4,"settings":{"defaultView":"source","rememberRecentFiles":true,"recentFilesLimit":10,"closeToTray":true}}`
+	if err := os.WriteFile(path, []byte(old), 0600); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := newStateStore(path).settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.PDF.PageSize != "Letter" || !saved.PDF.Bookmarks || saved.DefaultView != "source" {
+		t.Fatalf("v4 PDF migration: %+v", saved)
+	}
+	saved.PDF.PageSize = "A4"
+	saved.PDF.Orientation = "landscape"
+	saved.PDF.MarginLeft = 12
+	store := newStateStore(path)
+	if _, err = store.saveSettings(saved); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := store.settings()
+	if err != nil || reloaded.PDF.PageSize != "A4" || reloaded.PDF.MarginLeft != 12 {
+		t.Fatalf("PDF settings persistence: %+v %v", reloaded.PDF, err)
+	}
+}

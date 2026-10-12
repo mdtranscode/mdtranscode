@@ -54,6 +54,17 @@
     WriteRegStr SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.markdown\shell\MDTranscode.ConvertToWord" "MultiSelectModel" "Single"
     WriteRegStr SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.markdown\shell\MDTranscode.ConvertToWord\command" "" "$\"$INSTDIR\${PRODUCT_EXECUTABLE}$\" --convert-to-docx $\"%1$\""
 
+    # Add a second classic-menu command without disturbing Convert to Word.
+    WriteRegStr SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.md\shell\MDTranscode.ConvertToPDF" "" "Convert to PDF with MDTranscode"
+    WriteRegStr SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.md\shell\MDTranscode.ConvertToPDF" "Icon" "$INSTDIR\${PRODUCT_EXECUTABLE},0"
+    WriteRegStr SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.md\shell\MDTranscode.ConvertToPDF" "MultiSelectModel" "Single"
+    WriteRegStr SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.md\shell\MDTranscode.ConvertToPDF\command" "" "$\"$INSTDIR\${PRODUCT_EXECUTABLE}$\" --convert-to-pdf $\"%1$\""
+
+    WriteRegStr SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.markdown\shell\MDTranscode.ConvertToPDF" "" "Convert to PDF with MDTranscode"
+    WriteRegStr SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.markdown\shell\MDTranscode.ConvertToPDF" "Icon" "$INSTDIR\${PRODUCT_EXECUTABLE},0"
+    WriteRegStr SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.markdown\shell\MDTranscode.ConvertToPDF" "MultiSelectModel" "Single"
+    WriteRegStr SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.markdown\shell\MDTranscode.ConvertToPDF\command" "" "$\"$INSTDIR\${PRODUCT_EXECUTABLE}$\" --convert-to-pdf $\"%1$\""
+
     # Notify Explorer immediately that file-association metadata changed.
     System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 !macroend
@@ -67,6 +78,8 @@
     DeleteRegValue SHELL_CONTEXT "Software\Classes\.markdown\OpenWithProgids" "${MDT_PROGID}"
     DeleteRegKey SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.md\shell\MDTranscode.ConvertToWord"
     DeleteRegKey SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.markdown\shell\MDTranscode.ConvertToWord"
+    DeleteRegKey SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.md\shell\MDTranscode.ConvertToPDF"
+    DeleteRegKey SHELL_CONTEXT "Software\Classes\SystemFileAssociations\.markdown\shell\MDTranscode.ConvertToPDF"
     DeleteRegKey SHELL_CONTEXT "Software\Classes\Applications\${PRODUCT_EXECUTABLE}"
     DeleteRegKey SHELL_CONTEXT "Software\Classes\${MDT_PROGID}"
     DeleteRegValue SHELL_CONTEXT "Software\RegisteredApplications" "${MDT_REGISTERED_APP}"

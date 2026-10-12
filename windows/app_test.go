@@ -11,6 +11,71 @@ import (
 	"github.com/mdtranscode/mdtranscode/core-src/transcode"
 )
 
+// Last-export actions are constrained to a file produced by a successful manual
+// export; no frontend-supplied filesystem path is accepted by either action.
+func TestLastExportedFileValidation(t *testing.T) {
+	a := &App{}
+	if _, err := a.lastExportedFile(); err == nil {
+		t.Fatal("empty export history was accepted")
+	}
+
+	dir := t.TempDir()
+	for _, name := range []string{"client résumé.pdf", "report.docx", "REPORT.PDF"} {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte("test content"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		a.rememberExport(path)
+		if got, err := a.lastExportedFile(); err != nil || got != path {
+			t.Fatalf("lastExportedFile() = %q, %v; want %q", got, err, path)
+		}
+	}
+
+	a.rememberExport(filepath.Join(dir, "missing.pdf"))
+	if _, err := a.lastExportedFile(); err == nil {
+		t.Fatal("removed/missing export was accepted")
+	}
+	a.rememberExport(dir)
+	if _, err := a.lastExportedFile(); err == nil {
+		t.Fatal("directory was accepted as export")
+	}
+	other := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(other, []byte("not an export"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	a.rememberExport(other)
+	if _, err := a.lastExportedFile(); err == nil {
+		t.Fatal("unsupported extension was accepted")
+	}
+}
+
+func TestCreatedStatusActionsAreExposedOnlyForSuccessfulExports(t *testing.T) {
+	html, err := os.ReadFile("frontend/dist/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js, err := os.ReadFile("frontend/dist/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{`id="createdOpenButton"`, `id="createdRevealButton"`} {
+		if !strings.Contains(string(html), id) {
+			t.Fatalf("missing persistent status action %q", id)
+		}
+	}
+	for _, snippet := range []string{
+		`runExportAction("OpenLastExportedFile")`,
+		`runExportAction("ShowLastExportedFileInFolder")`,
+		`setCreatedStatus(outputPath)`,
+		`setCreatedStatus(path)`,
+		`setStatusText(message)`,
+	} {
+		if !strings.Contains(string(js), snippet) {
+			t.Fatalf("missing export status action wiring %q", snippet)
+		}
+	}
+}
+
 func TestLoadMarkdownFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "report.md")
@@ -170,5 +235,42 @@ func TestNormalizeDOCXOutputPath(t *testing.T) {
 	_, err = normalizeDOCXOutputPath(dir)
 	if err == nil || !strings.Contains(err.Error(), "directory") {
 		t.Fatalf("expected directory rejection, got %v", err)
+	}
+}
+
+func TestNormalizePDFOutputPath(t *testing.T) {
+	dir := t.TempDir()
+
+	result, err := normalizePDFOutputPath(filepath.Join(dir, "Report"))
+	if err != nil || result != filepath.Join(dir, "Report.pdf") {
+		t.Fatalf("PDF output suffix: %q %v", result, err)
+	}
+
+	result, err = normalizePDFOutputPath(filepath.Join(dir, "Report.PDF"))
+	if err != nil || result != filepath.Join(dir, "Report.PDF") {
+		t.Fatalf("existing uppercase PDF suffix changed: %q %v", result, err)
+	}
+
+	for _, input := range []string{"", "  "} {
+		if _, err := normalizePDFOutputPath(input); err == nil {
+			t.Fatalf("empty PDF output path %q accepted", input)
+		}
+	}
+
+	for _, path := range []string{dir, dir + string(filepath.Separator)} {
+		if _, err := normalizePDFOutputPath(path); err == nil || !strings.Contains(err.Error(), "directory") {
+			t.Fatalf("existing directory %q was not rejected: %v", path, err)
+		}
+	}
+
+	// A directory with a .pdf extension must still be rejected.
+	pdfDir := filepath.Join(dir, "Folder.pdf")
+	if err := os.Mkdir(pdfDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{pdfDir, filepath.Join(dir, "Folder")} {
+		if _, err := normalizePDFOutputPath(path); err == nil || !strings.Contains(err.Error(), "directory") {
+			t.Fatalf("PDF destination resolving to directory %q was not rejected: %v", path, err)
+		}
 	}
 }

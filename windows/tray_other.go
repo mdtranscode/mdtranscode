@@ -9,6 +9,8 @@ type trayController struct{}
 func startTray(_ *App) (*trayController, error) { return nil, errors.New("tray requires Windows") }
 func (t *trayController) stop()                 {}
 func openFolder(_ string) error                 { return errors.New("open folder requires Windows") }
+func openExportedFile(_ string) error           { return errors.New("opening exported files requires Windows") }
+func revealExportedFile(_ string) error         { return errors.New("File Explorer requires Windows") }
 func openWindowsStartupSettings() error {
 	return errors.New("Windows startup settings require Windows")
 }

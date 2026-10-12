@@ -7,11 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/mdtranscode/mdtranscode/core-src/markdown"
 	htmlrenderer "github.com/mdtranscode/mdtranscode/core-src/renderer/html"
+	"github.com/mdtranscode/mdtranscode/core-src/renderer/pdf"
 	"github.com/mdtranscode/mdtranscode/core-src/transcode"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -43,6 +45,8 @@ type App struct {
 	watcher     *folderWatcher
 	tray        *trayController
 	exiting     atomic.Bool
+	exportMu    sync.RWMutex
+	lastExport  string
 }
 
 func NewApp() *App {
@@ -194,6 +198,11 @@ func (a *App) SaveSettings(settings AppSettings) (AppSettings, error) {
 		return AppSettings{}, err
 	}
 	settings.Watcher = normalized
+	if settings.PDF.PageSize != "" {
+		if _, err := pdf.Validate(settings.PDF); err != nil {
+			return AppSettings{}, err
+		}
+	}
 	if err := prepareWatcherFolders(normalized); err != nil {
 		return AppSettings{}, err
 	}
@@ -284,6 +293,76 @@ func (a *App) openMarkdownPath(path string) (*MarkdownFile, error) {
 	return file, nil
 }
 
+// ExportPDF opens a Save dialog and delegates PDF rendering to the shared Core.
+func (a *App) ExportPDF(inputPath string) (string, error) {
+	if a.ctx == nil {
+		return "", errors.New("application is not ready")
+	}
+	input, err := validateMarkdownPath(inputPath)
+	if err != nil {
+		return "", err
+	}
+	settings, err := a.store.settings()
+	if err != nil {
+		return "", err
+	}
+	if _, err := pdf.Validate(settings.PDF); err != nil {
+		return "", err
+	}
+	suggested := transcode.DefaultOutputPath(input, transcode.FormatPDF)
+	selected, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title: "Export to PDF", DefaultDirectory: a.store.lastExportDirectory(filepath.Dir(suggested)),
+		DefaultFilename: filepath.Base(suggested), Filters: []runtime.FileFilter{{DisplayName: "PDF document (*.pdf)", Pattern: "*.pdf"}},
+	})
+	if err != nil {
+		return "", fmt.Errorf("save PDF dialog: %w", err)
+	}
+	if selected == "" {
+		return "", nil
+	}
+	output, err := normalizePDFOutputPath(selected)
+	if err != nil {
+		return "", err
+	}
+	result, err := transcode.ConvertFile(transcode.FileOptions{InputPath: input, OutputPath: output, Format: transcode.FormatPDF, Creator: appName, PDF: settings.PDF})
+	if err != nil {
+		return "", err
+	}
+	_ = a.store.rememberExportDirectory(result.OutputPath)
+	a.rememberExport(result.OutputPath)
+	return result.OutputPath, nil
+}
+
+func normalizePDFOutputPath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", errors.New("PDF output path is required")
+	}
+
+	// Reject the original selection before adding an extension. Otherwise an
+	// existing folder like "Reports" would silently become "Reports.pdf".
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve PDF output path: %w", err)
+	}
+	if info, statErr := os.Stat(absolute); statErr == nil && info.IsDir() {
+		return "", fmt.Errorf("%q is a directory, not a PDF document", absolute)
+	} else if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return "", fmt.Errorf("inspect PDF output path: %w", statErr)
+	}
+
+	if !strings.EqualFold(filepath.Ext(absolute), ".pdf") {
+		absolute += ".pdf"
+		// The suffixed destination might itself be an existing directory.
+		if info, statErr := os.Stat(absolute); statErr == nil && info.IsDir() {
+			return "", fmt.Errorf("%q is a directory, not a PDF document", absolute)
+		} else if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+			return "", fmt.Errorf("inspect PDF output path: %w", statErr)
+		}
+	}
+	return filepath.Clean(absolute), nil
+}
+
 // ExportDOCX asks for a destination and exports the selected Markdown file through Core.
 func (a *App) ExportDOCX(inputPath string) (string, error) {
 	if a.ctx == nil {
@@ -325,7 +404,57 @@ func (a *App) ExportDOCX(inputPath string) (string, error) {
 		return "", err
 	}
 	_ = a.store.rememberExportDirectory(result.OutputPath)
+	a.rememberExport(result.OutputPath)
 	return result.OutputPath, nil
+}
+
+// rememberExport records only files successfully created by a manual export.
+// The frontend never chooses which arbitrary filesystem path to open.
+func (a *App) rememberExport(path string) {
+	a.exportMu.Lock()
+	a.lastExport = path
+	a.exportMu.Unlock()
+}
+
+// lastExportedFile validates the stored result again before asking the OS to open it.
+func (a *App) lastExportedFile() (string, error) {
+	a.exportMu.RLock()
+	path := a.lastExport
+	a.exportMu.RUnlock()
+	if path == "" {
+		return "", errors.New("no exported document is available")
+	}
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext != ".pdf" && ext != ".docx" {
+		return "", errors.New("the last export is not a PDF or Word document")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("locate exported document: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", errors.New("the exported document is not a regular file")
+	}
+	return path, nil
+}
+
+// OpenLastExportedFile opens the most recently completed manual export using
+// the user's default PDF/Word application.
+func (a *App) OpenLastExportedFile() error {
+	path, err := a.lastExportedFile()
+	if err != nil {
+		return err
+	}
+	return openExportedFile(path)
+}
+
+// ShowLastExportedFileInFolder selects the most recent export in File Explorer.
+func (a *App) ShowLastExportedFileInFolder() error {
+	path, err := a.lastExportedFile()
+	if err != nil {
+		return err
+	}
+	return revealExportedFile(path)
 }
 
 func loadMarkdownFile(path string) (*MarkdownFile, error) {

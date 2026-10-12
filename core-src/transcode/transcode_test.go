@@ -24,7 +24,7 @@ func TestConvertFileRejectsUnsupportedFormat(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := ConvertFile(FileOptions{InputPath: input, Format: "pdf"})
+	_, err := ConvertFile(FileOptions{InputPath: input, Format: "rtf"})
 	if err == nil || !strings.Contains(err.Error(), "unsupported output format") {
 		t.Fatalf("expected unsupported-format error, got %v", err)
 	}

@@ -10,25 +10,28 @@ import (
 
 func TestExplorerConversionInput(t *testing.T) {
 	input := filepath.Join("C:\\", "Docs", "Quarterly Report.md")
-	path, handled, err := explorerConversionInput([]string{explorerConvertDOCXFlag, input})
+	path, format, handled, err := explorerConversionInput([]string{explorerConvertDOCXFlag, input})
 	if err != nil {
 		t.Fatalf("explorerConversionInput returned error: %v", err)
 	}
 	if !handled {
 		t.Fatal("explorerConversionInput did not handle the conversion flag")
 	}
+	if format != "docx" {
+		t.Fatalf("format = %q", format)
+	}
 	if path != input {
 		t.Fatalf("path = %q, want %q", path, input)
 	}
 
-	path, handled, err = explorerConversionInput([]string{"report.md"})
+	path, format, handled, err = explorerConversionInput([]string{"report.md"})
 	if err != nil || handled || path != "" {
 		t.Fatalf("non-conversion args = %q, %v, %v; want empty, false, nil", path, handled, err)
 	}
 }
 
 func TestExplorerConversionInputRequiresPath(t *testing.T) {
-	_, handled, err := explorerConversionInput([]string{explorerConvertDOCXFlag})
+	_, _, handled, err := explorerConversionInput([]string{explorerConvertDOCXFlag})
 	if !handled || err == nil || !strings.Contains(err.Error(), "requires a Markdown file path") {
 		t.Fatalf("expected handled missing-path error, got handled=%v err=%v", handled, err)
 	}
@@ -127,5 +130,21 @@ func TestRunExplorerConversionRejectsUnsupportedInput(t *testing.T) {
 	handled, _, err := runExplorerConversion([]string{explorerConvertDOCXFlag, "report.txt"})
 	if !handled || err == nil || !strings.Contains(err.Error(), "not a supported Markdown file") {
 		t.Fatalf("expected unsupported Markdown error, got handled=%v err=%v", handled, err)
+	}
+}
+
+func TestExplorerPDFCommandRoutingAndCollision(t *testing.T) {
+	input := filepath.Join(t.TempDir(), "Résumé.md")
+	path, format, handled, err := explorerConversionInput([]string{explorerConvertPDFFlag, input})
+	if err != nil || !handled || path != input || format != "pdf" {
+		t.Fatalf("PDF Explorer routing: %q %q %v %v", path, format, handled, err)
+	}
+	first := strings.TrimSuffix(input, ".md") + ".pdf"
+	if err := os.WriteFile(first, []byte("old"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	next, err := nextAvailablePath(first)
+	if err != nil || next != strings.TrimSuffix(input, ".md")+" (1).pdf" {
+		t.Fatalf("PDF collision handling: %q %v", next, err)
 	}
 }

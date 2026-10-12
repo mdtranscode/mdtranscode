@@ -24,6 +24,9 @@ type Options struct {
 	// useful for self-contained application previews that cannot safely rely on
 	// direct file:// access.
 	EmbedLocalImages bool
+
+	// BlockRemoteImages omits remote images, useful for entirely local PDF printing.
+	BlockRemoteImages bool
 }
 
 // OutlineItem describes one rendered heading and its stable in-document anchor.
@@ -315,7 +318,11 @@ func (r *renderer) renderImage(inline document.Inline) {
 	}
 
 	if remote := safeRemoteImageURL(source); remote != "" {
-		r.writeImageTag(remote, alt)
+		if r.options.BlockRemoteImages {
+			r.writeImageFallback(alt)
+		} else {
+			r.writeImageTag(remote, alt)
+		}
 		return
 	}
 

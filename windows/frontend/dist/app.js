@@ -22,6 +22,8 @@
     elements.settingsButton = document.getElementById("settingsButton");
     elements.openButton = document.getElementById("openButton");
     elements.exportButton = document.getElementById("exportButton");
+    elements.exportPDFButton = document.getElementById("exportPDFButton");
+    for (const id of ["pdfPageSize","pdfOrientation","pdfMarginTop","pdfMarginRight","pdfMarginBottom","pdfMarginLeft","pdfHeaderText","pdfFooterText","pdfPageNumbers","pdfBookmarks","pdfBreakH1"]) elements[id] = document.getElementById(id);
     elements.emptyDetails = document.getElementById("emptyDetails");
     elements.fileDetails = document.getElementById("fileDetails");
     elements.fileName = document.getElementById("fileName");
@@ -45,6 +47,8 @@
     elements.outlineSidebarToggle = document.getElementById("outlineSidebarToggle");
     elements.sourceView = document.getElementById("sourceView");
     elements.statusText = document.getElementById("statusText");
+    elements.createdOpenButton = document.getElementById("createdOpenButton");
+    elements.createdRevealButton = document.getElementById("createdRevealButton");
     elements.versionLabel = document.getElementById("versionLabel");
     elements.toast = document.getElementById("toast");
     elements.settingsModal = document.getElementById("settingsModal");
@@ -73,6 +77,9 @@
     elements.settingsButton.addEventListener("click", openSettings);
     elements.openButton.addEventListener("click", openMarkdown);
     elements.exportButton.addEventListener("click", exportDOCX);
+    elements.exportPDFButton.addEventListener("click", exportPDF);
+    elements.createdOpenButton.addEventListener("click", () => runExportAction("OpenLastExportedFile"));
+    elements.createdRevealButton.addEventListener("click", () => runExportAction("ShowLastExportedFileInFolder"));
     elements.clearRecentButton.addEventListener("click", clearRecentFiles);
     elements.recentList.addEventListener("click", openRecentFile);
     elements.previewTab.addEventListener("click", () => setView("preview"));
@@ -277,11 +284,22 @@
         setStatus("Export cancelled");
         return;
       }
-      setStatus(`Created ${outputPath}`);
-      showToast(`Word document created: ${outputPath}`, false);
+      setCreatedStatus(outputPath);
+      showToast("Word document created.", false);
     } catch (error) {
       handleError(error);
     }
+  }
+
+  async function exportPDF() {
+    if (!state.file) return;
+    setBusy("Exporting PDF...");
+    try {
+      const path = await window.go.main.App.ExportPDF(state.file.path);
+      if (!path) { setStatus("Export cancelled"); return; }
+      setCreatedStatus(path);
+      showToast("PDF created.", false);
+    } catch(error) {handleError(error);}
   }
 
   function renderFile(file) {
@@ -291,6 +309,7 @@
     elements.emptyDetails.classList.add("hidden");
     elements.fileDetails.classList.remove("hidden");
     elements.exportButton.disabled = false;
+    elements.exportPDFButton.disabled = false;
     elements.fileName.textContent = file.name;
     elements.filePath.textContent = file.path;
     elements.fileSize.textContent = formatBytes(file.size);
@@ -546,6 +565,15 @@
     elements.watcherRecursive.checked = Boolean(watcher.recursive);
     elements.watcherConvertExisting.checked = Boolean(watcher.convertExisting);
     elements.closeToTrayCheckbox.checked = Boolean(state.settings.closeToTray);
+    const pdf = state.settings.pdf || {};
+    elements.pdfPageSize.value = pdf.pageSize || "Letter";
+    elements.pdfOrientation.value = pdf.orientation || "portrait";
+    for (const side of ["Top","Right","Bottom","Left"]) elements[`pdfMargin${side}`].value=pdf[`margin${side}`] ?? 19;
+    elements.pdfHeaderText.value=pdf.headerText || "";
+    elements.pdfFooterText.value=pdf.footerText || "";
+    elements.pdfPageNumbers.checked=pdf.pageNumbers !== false;
+    elements.pdfBookmarks.checked=pdf.bookmarks !== false;
+    elements.pdfBreakH1.checked=Boolean(pdf.pageBreakBeforeH1);
     updateSettingsControls();
   }
 
@@ -591,6 +619,19 @@
         // Preserve legacy saved flag without initiating GitHub checks.
         updateNotifications: Boolean(state.settings.updateNotifications),
         closeToTray: elements.closeToTrayCheckbox.checked,
+        pdf: {
+          pageSize:elements.pdfPageSize.value,
+          orientation:elements.pdfOrientation.value,
+          marginTop:Number(elements.pdfMarginTop.value),
+          marginRight:Number(elements.pdfMarginRight.value),
+          marginBottom:Number(elements.pdfMarginBottom.value),
+          marginLeft:Number(elements.pdfMarginLeft.value),
+          headerText:elements.pdfHeaderText.value,
+          footerText:elements.pdfFooterText.value,
+          pageNumbers:elements.pdfPageNumbers.checked,
+          bookmarks:elements.pdfBookmarks.checked,
+          pageBreakBeforeH1:elements.pdfBreakH1.checked,
+        },
         watcher: {
           enabled: elements.watcherEnabled.checked,
           paused: elements.watcherPaused.checked,
@@ -619,6 +660,7 @@
     elements.settingsButton.disabled = true;
     elements.openButton.disabled = true;
     elements.exportButton.disabled = true;
+    elements.exportPDFButton.disabled = true;
     setStatusText(message);
   }
 
@@ -627,10 +669,32 @@
     elements.settingsButton.disabled = false;
     elements.openButton.disabled = false;
     elements.exportButton.disabled = !state.file;
+    elements.exportPDFButton.disabled = !state.file;
   }
 
   function setStatusText(message) {
     elements.statusText.textContent = message;
+    elements.createdOpenButton.classList.add("hidden");
+    elements.createdRevealButton.classList.add("hidden");
+  }
+
+  function setCreatedStatus(path) {
+    setStatus("Created");
+    const name = path.split(/[\\/]/).pop() || path;
+    elements.createdOpenButton.textContent = name;
+    elements.createdOpenButton.title = `Open ${path}`;
+    elements.createdOpenButton.setAttribute("aria-label", `Open exported document ${name}`);
+    elements.createdRevealButton.title = `Show ${path} in File Explorer`;
+    elements.createdOpenButton.classList.remove("hidden");
+    elements.createdRevealButton.classList.remove("hidden");
+  }
+
+  async function runExportAction(name) {
+    try {
+      await window.go.main.App[name]();
+    } catch (error) {
+      showToast(normalizeError(error), true);
+    }
   }
 
   function handleError(error) {
