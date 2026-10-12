@@ -828,3 +828,121 @@ button {
 .watcher-status small { color: #64748b; }
 .watcher-history { display: grid; gap: 3px; color: #56657b; overflow-wrap: anywhere; }
 .watcher-history .watcher-error { color: #b42318; }
+
+/* Settings is now a first-class application page, not a modal. */
+.app-shell.settings-open { grid-template-rows: auto 1fr; }
+.app-shell.settings-open > .workspace,
+.app-shell.settings-open > .statusbar { display: none !important; }
+.settings-page { grid-row: 2; min-width: 0; min-height: 0; display: flex; overflow: hidden; background: #f4f7fb; padding: 16px 24px; }
+.settings-page.hidden { display: none !important; }
+.settings-page .settings-card { display: flex; flex: 1 1 auto; flex-direction: column; position: static; width: 100%; max-width: 1150px; height: 100%; max-height: none; min-width: 0; min-height: 0; margin: 0 auto; overflow: hidden; border-radius: 12px; box-shadow: 0 1px 8px rgba(16,24,40,.06); background: #fff; border: 1px solid #dfe4ec; }
+.settings-page .settings-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 26px; gap: 24px; }
+.settings-page .settings-header,
+.settings-page .settings-footer { flex: 0 0 auto; padding: 16px 26px; }
+.settings-page .settings-footer { position: relative; z-index: 1; box-shadow: 0 -2px 8px rgba(16,24,40,.04); }
+.settings-page .settings-header { display: flex; justify-content: space-between; align-items: center; }
+.settings-page .watcher-settings { border-top: 1px solid #e5e9f0; padding-top: 22px; }
+.integration-settings { border-top: 1px solid #e5e9f0; padding-top: 18px; display: grid; gap: 12px; }
+.integration-settings h3 { margin: 0; font-size: 17px; }
+.integration-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+@media (max-width: 700px) { .settings-page { padding: 10px; } .settings-page .settings-body { padding: 16px; } }
+
+/* Hierarchical outline: separate toggle from heading navigation. */
+.outline-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin: 0 3px 10px; }
+.outline-heading-row .outline-heading { margin: 0 5px; }
+.outline-controls { display: flex; gap: 3px; }
+.outline-control { border: 0; border-radius: 5px; background: transparent; color: #51627b; font-size: 10px; cursor: pointer; padding: 4px; }
+.outline-control:hover { background: #e9edf4; }
+.outline-list { display: block; }
+.outline-node { min-width: 0; }
+.outline-row { display: flex; align-items: center; min-width: 0; border-radius: 5px; }
+.outline-row:hover { background: #f0f3f9; }
+.outline-toggle-slot { flex: 0 0 21px; display: flex; align-items: center; justify-content: center; }
+.outline-toggle { width: 21px; height: 27px; }
+.outline-toggle { border: 0; border-radius: 4px; background: transparent; cursor: pointer; color: #51627b; font-size: 12px; }
+.outline-toggle[hidden] { display: none; }
+.outline-toggle:focus-visible, .outline-control:focus-visible { outline: 2px solid #4773b6; outline-offset: 1px; }
+.outline-row .outline-item { flex: 1; min-width: 0; padding: 6px 4px; min-height: 28px; }
+.outline-children { padding-left: 12px; }
+.outline-children[hidden] { display: none; }
+
+/* Iteration 2: collapsible OUTLINE SIDEBAR (distinct from section nesting).
+   Expanded on every launch; compact rail shows every heading as H1/H2/H3
+   while giving the document preview most of the available width. */
+.preview-view.outline-compact {
+  grid-template-columns: 78px minmax(0, 1fr);
+}
+.outline-heading-row {
+  min-height: 30px;
+  margin-bottom: 8px;
+}
+.outline-sidebar-toggle {
+  flex: 0 0 29px;
+  width: 29px;
+  height: 29px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  color: #40506a;
+  background: transparent;
+  cursor: pointer;
+}
+.outline-sidebar-toggle:hover { background: #e9edf4; }
+.outline-sidebar-toggle:focus-visible { outline: 2px solid #4773b6; outline-offset: 1px; }
+.outline-sidebar-toggle::before {
+  content: "";
+  display: block;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(135deg);
+}
+.outline-panel.is-collapsed { padding: 14px 4px; }
+.outline-panel.is-collapsed .outline-heading { display: none; }
+.outline-panel.is-collapsed .outline-heading-row { justify-content: center; margin: 0 0 10px; }
+.outline-panel.is-collapsed .outline-sidebar-toggle::before { transform: rotate(-45deg); }
+/* Flatten only the visual grouping in compact mode. All H1–H6 remain
+   visible even if a branch was previously closed in expanded mode. */
+.outline-panel.is-collapsed .outline-node,
+.outline-panel.is-collapsed .outline-children,
+.outline-panel.is-collapsed .outline-children[hidden] {
+  display: contents !important;
+}
+.outline-panel.is-collapsed .outline-row {
+  padding-left: calc((var(--outline-level) - 1) * 2px);
+  min-height: 30px;
+}
+.outline-panel.is-collapsed .outline-toggle-slot { display: none; }
+.outline-panel.is-collapsed .outline-item {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 29px;
+  padding: 5px 2px;
+  font-size: 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: visible;
+}
+.outline-panel.is-collapsed .outline-item::after {
+  content: attr(data-heading-label);
+  font-size: 11px;
+  font-weight: 700;
+  color: #40506a;
+  letter-spacing: .02em;
+}
+
+/* Responsive slide-in/slide-out sizing, with reduced-motion accessibility. */
+.preview-view:not(.outline-compact) { grid-template-columns: 220px minmax(0, 1fr); }
+@media (max-width: 1040px) {
+  .preview-view:not(.outline-compact) { grid-template-columns: 180px minmax(0, 1fr); }
+}
+@media (max-width: 860px) {
+  .preview-view:not(.outline-compact) { grid-template-columns: 150px minmax(0, 1fr); }
+}
+.preview-view { transition: grid-template-columns 180ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .preview-view { transition: none; }
+}

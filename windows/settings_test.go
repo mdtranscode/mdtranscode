@@ -18,6 +18,9 @@ func TestStateStoreDefaults(t *testing.T) {
 	if !settings.RememberRecentFiles {
 		t.Fatal("RememberRecentFiles should default to true")
 	}
+	if !settings.CloseToTray {
+		t.Fatal("CloseToTray should default to true")
+	}
 	if settings.RecentFilesLimit != defaultRecentFilesLimit {
 		t.Fatalf("RecentFilesLimit = %d, want %d", settings.RecentFilesLimit, defaultRecentFilesLimit)
 	}
@@ -168,5 +171,64 @@ func TestAppLegacySettingsSaveDoesNotDisableWatcher(t *testing.T) {
 	}
 	if next.Watcher != prior.Watcher {
 		t.Fatalf("legacy UI overwrote watcher configuration: got %#v want %#v", next.Watcher, prior.Watcher)
+	}
+}
+
+func TestVersionTwoSettingsMigrationPreservesWatcherAndEnablesSourceNotices(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	existing := `{"version":2,"settings":{"defaultView":"source","rememberRecentFiles":true,"recentFilesLimit":10,"watcher":{"enabled":true,"paused":true,"watchFolder":"C:\\\\Markdown","outputFolder":"C:\\\\Word","recursive":true}}}`
+	if err := os.WriteFile(path, []byte(existing), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store := newStateStore(path)
+	settings, err := store.settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settings.UpdateNotifications {
+		t.Fatal("existing users should receive opt-in source notice default")
+	}
+	if !settings.Watcher.Enabled || !settings.Watcher.Paused || settings.Watcher.WatchFolder == "" {
+		t.Fatalf("version 2 watcher configuration lost: %#v", settings.Watcher)
+	}
+}
+
+func TestCloseToTrayPreferencePersists(t *testing.T) {
+	store := newStateStore(filepath.Join(t.TempDir(), "settings.json"))
+	settings := defaultPersistedState().Settings
+	settings.CloseToTray = false
+	if _, err := store.saveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.CloseToTray {
+		t.Fatal("explicit CloseToTray=false was lost")
+	}
+	settings.CloseToTray = true
+	if _, err := store.saveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = store.settings()
+	if err != nil || !loaded.CloseToTray {
+		t.Fatalf("CloseToTray=true not persisted: %#v, %v", loaded, err)
+	}
+}
+
+func TestCloseToTrayMigrationDefaultsOnWithoutChangingOtherPreferences(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	// v3 predates closeToTray. It should preserve the watcher and update settings.
+	data := []byte(`{"version":3,"settings":{"defaultView":"source","rememberRecentFiles":true,"recentFilesLimit":5,"updateNotifications":false,"watcher":{"enabled":false,"paused":true}}}`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := newStateStore(path).settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settings.CloseToTray || settings.UpdateNotifications || settings.DefaultView != "source" || !settings.Watcher.Paused {
+		t.Fatalf("v3 migration changed preferences: %#v", settings)
 	}
 }

@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	settingsVersion         = 2
+	settingsVersion         = 4
 	defaultRecentFilesLimit = 10
 	minRecentFilesLimit     = 3
 	maxRecentFilesLimit     = 20
@@ -23,6 +23,8 @@ type AppSettings struct {
 	RememberRecentFiles bool            `json:"rememberRecentFiles"`
 	RecentFilesLimit    int             `json:"recentFilesLimit"`
 	Watcher             WatcherSettings `json:"watcher"`
+	UpdateNotifications bool            `json:"updateNotifications"`
+	CloseToTray         bool            `json:"closeToTray"`
 }
 
 // RecentFile is one recent Markdown document displayed by the Windows shell.
@@ -65,6 +67,8 @@ func defaultPersistedState() persistedState {
 			RememberRecentFiles: true,
 			RecentFilesLimit:    defaultRecentFilesLimit,
 			Watcher:             defaultWatcherSettings(),
+			UpdateNotifications: true,
+			CloseToTray:         true,
 		},
 	}
 }
@@ -88,6 +92,8 @@ func normalizeSettings(value AppSettings) AppSettings {
 		RememberRecentFiles: value.RememberRecentFiles,
 		RecentFilesLimit:    limit,
 		Watcher:             normalizeWatcherSettings(value.Watcher),
+		UpdateNotifications: value.UpdateNotifications,
+		CloseToTray:         value.CloseToTray,
 	}
 }
 
@@ -100,8 +106,16 @@ func normalizePersistedState(value persistedState) persistedState {
 	} else {
 		value.Settings = normalizeSettings(value.Settings)
 	}
-	if oldVersion < settingsVersion {
+	if oldVersion < 2 {
 		value.Settings.Watcher = defaultWatcherSettings()
+	}
+	if oldVersion < 3 {
+		value.Settings.UpdateNotifications = true
+	}
+	if oldVersion < 4 {
+		// Existing users keep the current close-to-tray behavior unless
+		// they explicitly turn it off after upgrading.
+		value.Settings.CloseToTray = true
 	}
 	if !value.Settings.RememberRecentFiles {
 		value.RecentFiles = nil

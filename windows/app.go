@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/mdtranscode/mdtranscode/core-src/markdown"
@@ -40,6 +41,8 @@ type App struct {
 	store       *stateStore
 	startupPath string
 	watcher     *folderWatcher
+	tray        *trayController
+	exiting     atomic.Bool
 }
 
 func NewApp() *App {
@@ -56,6 +59,13 @@ func newApp(store *stateStore, args []string) *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	tray, trayErr := startTray(a)
+	if trayErr == nil {
+		a.tray = tray
+	} else {
+		// Never strand the user in a hidden app without a functioning tray.
+		runtime.WindowShow(ctx)
+	}
 	settings, err := a.store.settings()
 	if err == nil {
 		err = a.watcher.configure(settings.Watcher)
@@ -68,9 +78,99 @@ func (a *App) startup(ctx context.Context) {
 	}
 }
 
+// beforeClose hides the window only when the user permits close-to-tray.
+// When disabled (or on explicit tray Exit), Wails shuts down the watcher.
+func (a *App) beforeClose(ctx context.Context) bool {
+	if a.tray == nil || a.exiting.Load() {
+		return false
+	}
+	settings, err := a.store.settings()
+	if err != nil || !settings.CloseToTray {
+		// A real close stops the watcher through the normal Wails shutdown.
+		return false
+	}
+	runtime.WindowHide(ctx)
+	return true
+}
+func (a *App) showApp(page string) {
+	if a.ctx == nil {
+		return
+	}
+	runtime.WindowShow(a.ctx)
+	runtime.WindowUnminimise(a.ctx)
+	if page == "settings" {
+		runtime.EventsEmit(a.ctx, "mdtranscode:open-settings")
+	}
+	if page == "history" {
+		runtime.EventsEmit(a.ctx, "mdtranscode:open-settings")
+	}
+	if page == "updates" {
+		runtime.EventsEmit(a.ctx, "mdtranscode:open-updates")
+	}
+}
+func (a *App) trayCommand(id uint32) {
+	if a.ctx == nil {
+		return
+	}
+	switch id {
+	case idOpen:
+		a.showApp("")
+	case idSettings:
+		a.showApp("settings")
+	case idHistory:
+		a.showApp("history")
+	case idUpdate:
+		a.showApp("updates")
+	case idWatchFolder:
+		if err := a.OpenWatchedFolder(); err != nil {
+			a.showApp("settings")
+			runtime.EventsEmit(a.ctx, "mdtranscode:tray-error", err.Error())
+		}
+	case idOutputFolder:
+		if err := a.OpenConvertedFolder(); err != nil {
+			a.showApp("settings")
+			runtime.EventsEmit(a.ctx, "mdtranscode:tray-error", err.Error())
+		}
+	case idStartup:
+		_ = a.OpenWindowsStartupSettings()
+	case idPause:
+		s, err := a.store.settings()
+		if err == nil && s.Watcher.Enabled {
+			s.Watcher.Paused = !s.Watcher.Paused
+			_, _ = a.SaveSettings(s)
+		}
+	case idScan:
+		go a.watcher.scan(time.Now())
+	case idExit:
+		a.exiting.Store(true)
+		runtime.Quit(a.ctx)
+	}
+}
+
+// OpenWindowsStartupSettings opens the Windows-managed Startup Apps page.
+// Enabling/disabling a packaged startup task remains under user control.
+func (a *App) OpenWindowsStartupSettings() error {
+	return openWindowsStartupSettings()
+}
+
+func (a *App) OpenWatchedFolder() error {
+	s, err := a.store.settings()
+	if err != nil {
+		return err
+	}
+	return openFolder(s.Watcher.WatchFolder)
+}
+func (a *App) OpenConvertedFolder() error {
+	s, err := a.store.settings()
+	if err != nil {
+		return err
+	}
+	return openFolder(s.Watcher.OutputFolder)
+}
+
 // Version returns the current application version for the shell UI.
 func (a *App) Version() string {
-	return appVersion
+	return displayVersion()
 }
 
 // Settings returns the current user-facing application settings.
@@ -119,7 +219,12 @@ func (a *App) BrowseWatcherFolder() (string, error) {
 }
 
 // shutdown cancels background scans before Wails exits.
-func (a *App) shutdown(_ context.Context) { a.watcher.stop() }
+func (a *App) shutdown(_ context.Context) {
+	a.watcher.stop()
+	if a.tray != nil {
+		a.tray.stop()
+	}
+}
 
 // RecentFiles returns the recent Markdown files known to the application.
 func (a *App) RecentFiles() ([]RecentFile, error) {

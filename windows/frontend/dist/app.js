@@ -18,6 +18,7 @@
     for (const id of ["findButton", "findBar", "findInput", "findCount", "findPrevious", "findNext", "findClose"]) {
       elements[id] = document.getElementById(id);
     }
+    elements.appShell = document.getElementById("appShell");
     elements.settingsButton = document.getElementById("settingsButton");
     elements.openButton = document.getElementById("openButton");
     elements.exportButton = document.getElementById("exportButton");
@@ -40,6 +41,8 @@
     elements.previewContent = document.getElementById("previewContent");
     elements.outlineEmpty = document.getElementById("outlineEmpty");
     elements.outlineList = document.getElementById("outlineList");
+    elements.outlinePanel = document.getElementById("outlinePanel");
+    elements.outlineSidebarToggle = document.getElementById("outlineSidebarToggle");
     elements.sourceView = document.getElementById("sourceView");
     elements.statusText = document.getElementById("statusText");
     elements.versionLabel = document.getElementById("versionLabel");
@@ -48,6 +51,7 @@
     elements.settingsCloseButton = document.getElementById("settingsCloseButton");
     elements.settingsCancelButton = document.getElementById("settingsCancelButton");
     elements.settingsSaveButton = document.getElementById("settingsSaveButton");
+    for (const id of ["openWatchFolderButton", "openOutputFolderButton", "windowsStartupButton", "closeToTrayCheckbox", "openStoreButton", "storeUpdatesSection"]) elements[id] = document.getElementById(id);
     elements.defaultViewSelect = document.getElementById("defaultViewSelect");
     elements.rememberRecentCheckbox = document.getElementById("rememberRecentCheckbox");
     elements.recentLimitSelect = document.getElementById("recentLimitSelect");
@@ -74,6 +78,7 @@
     elements.previewTab.addEventListener("click", () => setView("preview"));
     elements.sourceTab.addEventListener("click", () => setView("source"));
     elements.outlineList.addEventListener("click", navigateOutline);
+    elements.outlineSidebarToggle.addEventListener("click", toggleOutlineSidebar);
     elements.previewContent.addEventListener("click", handlePreviewClick);
     elements.settingsCloseButton.addEventListener("click", closeSettings);
     elements.settingsCancelButton.addEventListener("click", closeSettings);
@@ -81,14 +86,13 @@
     elements.rememberRecentCheckbox.addEventListener("change", updateSettingsControls);
     elements.watcherBrowseInput.addEventListener("click", () => browseWatcherFolder("watcherInputPath"));
     elements.watcherBrowseOutput.addEventListener("click", () => browseWatcherFolder("watcherOutputPath"));
+    elements.openWatchFolderButton.addEventListener("click", () => runFolderAction("OpenWatchedFolder"));
+    elements.openOutputFolderButton.addEventListener("click", () => runFolderAction("OpenConvertedFolder"));
+    elements.windowsStartupButton.addEventListener("click", () => runFolderAction("OpenWindowsStartupSettings"));
+    elements.openStoreButton.addEventListener("click", () => window.runtime.BrowserOpenURL("https://apps.microsoft.com/detail/9MXCQXBPS8K1"));
     window.setInterval(() => {
       if (!elements.settingsModal.classList.contains("hidden")) refreshWatcherStatus();
     }, 5000);
-    elements.settingsModal.addEventListener("click", (event) => {
-      if (event.target === elements.settingsModal) {
-        closeSettings();
-      }
-    });
     document.addEventListener("keydown", (event) => {
       if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
@@ -119,6 +123,13 @@
     }
 
     if (window.runtime && window.runtime.EventsOn) {
+      window.runtime.EventsOn("mdtranscode:open-settings", () => openSettings());
+      window.runtime.EventsOn("mdtranscode:tray-error", (message) => showToast(message, true));
+      window.runtime.EventsOn("mdtranscode:open-updates", async () => {
+        await openSettings();
+        elements.storeUpdatesSection.scrollIntoView({ block: "start", behavior: "smooth" });
+        elements.openStoreButton.focus({ preventScroll: true });
+      });
       window.runtime.EventsOn("mdtranscode:open-markdown", (path) => {
         if (!path) {
           return;
@@ -135,7 +146,7 @@
       const version = await window.go.main.App.Version();
       elements.versionLabel.textContent = version;
     } catch (_error) {
-      elements.versionLabel.textContent = "development build";
+      elements.versionLabel.textContent = "";
     }
 
     try {
@@ -306,19 +317,82 @@
 
     elements.outlineEmpty.classList.add("hidden");
     elements.outlineList.classList.remove("hidden");
-    outline.forEach((item) => {
+    // Build a nested outline according to heading levels. When levels skip
+    // (H1 -> H3), attach the new heading to its closest existing ancestor.
+    const stack = [{ level: 0, children: elements.outlineList, toggle: null }];
+    outline.forEach((item, index) => {
+      const level = Math.max(1, Math.min(6, Number(item.level) || 1));
+      while (stack.length > 1 && stack[stack.length - 1].level >= level) stack.pop();
+      const parent = stack[stack.length - 1];
+      if (parent.toggle) {
+        parent.toggle.hidden = false;
+      }
+      const node = document.createElement("div");
+      node.className = "outline-node";
+      const row = document.createElement("div");
+      row.className = "outline-row";
+      row.style.setProperty("--outline-level", String(level));
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "outline-toggle";
+      toggle.hidden = true;
+      toggle.textContent = "▾";
+      toggle.title = "Collapse section";
+      toggle.setAttribute("aria-label", `Collapse ${item.text || "Untitled section"}`);
+      toggle.setAttribute("aria-expanded", "true");
+      const childId = `outline-children-${index}`;
+      toggle.setAttribute("aria-controls", childId);
       const button = document.createElement("button");
       button.type = "button";
       button.className = "outline-item";
       button.dataset.headingId = item.id;
-      button.style.setProperty("--outline-level", String(Math.max(1, Math.min(6, item.level || 1))));
       button.textContent = item.text || "Untitled section";
-      button.title = item.text || "Untitled section";
-      elements.outlineList.appendChild(button);
+      button.dataset.headingLabel = `H${level}`;
+      button.title = `H${level}: ${item.text || "Untitled section"}`;
+      button.setAttribute("aria-label", button.title);
+      const children = document.createElement("div");
+      children.className = "outline-children";
+      children.id = childId;
+      const toggleSlot = document.createElement("span");
+      toggleSlot.className = "outline-toggle-slot";
+      toggleSlot.appendChild(toggle);
+      row.append(toggleSlot, button);
+      node.append(row, children);
+      parent.children.appendChild(node);
+      stack.push({ level, children, toggle });
     });
   }
 
+  function setOutlineToggle(toggle, expanded) {
+    const node = toggle.closest(".outline-node");
+    const children = node && node.querySelector(":scope > .outline-children");
+    if (!children) return;
+    children.hidden = !expanded;
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.textContent = expanded ? "▾" : "▸";
+    const title = node.querySelector(":scope > .outline-row > .outline-item")?.textContent || "section";
+    toggle.title = `${expanded ? "Collapse" : "Expand"} section`;
+    toggle.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} ${title}`);
+  }
+
+  // The sidebar toggle changes its WIDTH, not the document heading hierarchy.
+  // Expanded is the default on every launch. In compact mode CSS shows all
+  // heading levels as short H1/H2/H3 labels while retaining navigation.
+  function toggleOutlineSidebar() {
+    const compact = elements.outlinePanel.classList.toggle("is-collapsed");
+    elements.previewView.classList.toggle("outline-compact", compact);
+    elements.outlineSidebarToggle.setAttribute("aria-expanded", String(!compact));
+    const label = compact ? "Expand outline sidebar" : "Collapse outline sidebar";
+    elements.outlineSidebarToggle.setAttribute("aria-label", label);
+    elements.outlineSidebarToggle.title = label;
+  }
+
   function navigateOutline(event) {
+    const toggle = event.target.closest(".outline-toggle");
+    if (toggle && elements.outlineList.contains(toggle)) {
+      setOutlineToggle(toggle, toggle.getAttribute("aria-expanded") !== "true");
+      return;
+    }
     const button = event.target.closest(".outline-item");
     if (!button) {
       return;
@@ -437,15 +511,19 @@
     elements.findCount.textContent = `${state.find.active + 1} of ${matches.length}`;
   }
 
-  function openSettings() {
+  async function openSettings() {
+    try { state.settings = await window.go.main.App.Settings(); }
+    catch (error) { showToast(`Could not load settings: ${normalizeError(error)}`, true); }
     populateSettingsControls();
     refreshWatcherStatus();
+    elements.appShell.classList.add("settings-open");
     elements.settingsModal.classList.remove("hidden");
     elements.settingsModal.setAttribute("aria-hidden", "false");
     elements.defaultViewSelect.focus();
   }
 
   function closeSettings() {
+    elements.appShell.classList.remove("settings-open");
     elements.settingsModal.classList.add("hidden");
     elements.settingsModal.setAttribute("aria-hidden", "true");
     elements.settingsButton.focus();
@@ -467,6 +545,7 @@
     elements.watcherOutputPath.value = watcher.outputFolder || "";
     elements.watcherRecursive.checked = Boolean(watcher.recursive);
     elements.watcherConvertExisting.checked = Boolean(watcher.convertExisting);
+    elements.closeToTrayCheckbox.checked = Boolean(state.settings.closeToTray);
     updateSettingsControls();
   }
 
@@ -509,6 +588,9 @@
         defaultView: elements.defaultViewSelect.value,
         rememberRecentFiles: elements.rememberRecentCheckbox.checked,
         recentFilesLimit: Number.parseInt(elements.recentLimitSelect.value, 10),
+        // Preserve legacy saved flag without initiating GitHub checks.
+        updateNotifications: Boolean(state.settings.updateNotifications),
+        closeToTray: elements.closeToTrayCheckbox.checked,
         watcher: {
           enabled: elements.watcherEnabled.checked,
           paused: elements.watcherPaused.checked,
@@ -526,6 +608,11 @@
     } finally {
       elements.settingsSaveButton.disabled = false;
     }
+  }
+
+  async function runFolderAction(name) {
+    try { await window.go.main.App[name](); }
+    catch (error) { showToast(normalizeError(error), true); }
   }
 
   function setBusy(message) {

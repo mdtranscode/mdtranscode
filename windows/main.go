@@ -24,19 +24,27 @@ func main() {
 	}
 
 	app := NewApp()
+	backgroundLaunch := false
+	for _, arg := range os.Args[1:] {
+		if arg == "--startup" || arg == "--background" {
+			backgroundLaunch = true
+		}
+	}
 
 	err := wails.Run(&options.App{
-		Title:     appName,
-		Width:     1180,
-		Height:    760,
-		MinWidth:  860,
-		MinHeight: 560,
+		Title:       appName,
+		StartHidden: backgroundLaunch,
+		Width:       1180,
+		Height:      760,
+		MinWidth:    860,
+		MinHeight:   560,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 246, G: 248, B: 251, A: 1},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
+		OnBeforeClose:    app.beforeClose,
 		DragAndDrop: &options.DragAndDrop{
 			EnableFileDrop: true,
 		},
