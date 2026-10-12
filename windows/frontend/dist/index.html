@@ -142,6 +142,31 @@
             <option value="20">20</option>
           </select>
         </label>
+
+        <section class="watcher-settings" aria-labelledby="watcherSettingsTitle">
+          <h3 id="watcherSettingsTitle">Automatic Word conversion <span class="settings-preview">Preview</span></h3>
+          <p class="settings-note">While MDTranscode is open, scan a Markdown folder and convert stable files automatically. This preview does not yet run in the Windows tray or start with Windows.</p>
+          <label class="setting-check">
+            <input id="watcherEnabled" type="checkbox">
+            <span><strong>Enable folder monitoring</strong><small>Runs a reconciliation scan approximately every five seconds.</small></span>
+          </label>
+          <label class="setting-check">
+            <input id="watcherPaused" type="checkbox">
+            <span><strong>Pause monitoring</strong><small>Keep configuration without processing files.</small></span>
+          </label>
+          <label class="setting-field" for="watcherInputPath"><span>Markdown folder</span></label>
+          <div class="path-picker"><input id="watcherInputPath" type="text" spellcheck="false" autocomplete="off"><button id="watcherBrowseInput" class="button secondary" type="button">Browse</button></div>
+          <label class="setting-field" for="watcherOutputPath"><span>Converted DOCX folder</span></label>
+          <div class="path-picker"><input id="watcherOutputPath" type="text" spellcheck="false" autocomplete="off"><button id="watcherBrowseOutput" class="button secondary" type="button">Browse</button></div>
+          <p class="settings-note">Use the same folder to keep Markdown and Word files together, or choose separate folders. Missing folders are created when you enable monitoring and save. Separate folders cannot be nested inside each other.</p>
+          <label class="setting-check"><input id="watcherRecursive" type="checkbox"><span><strong>Include subfolders</strong><small>Preserve relative folder structure under the converted output directory.</small></span></label>
+          <label class="setting-check"><input id="watcherConvertExisting" type="checkbox"><span><strong>Convert existing files on first enable</strong><small>Otherwise start with changes after the first scan.</small></span></label>
+          <div class="watcher-status" aria-live="polite">
+            <strong id="watcherStatusLine">Monitoring inactive</strong>
+            <small id="watcherLastScan">Not scanned yet</small>
+            <div id="watcherHistory" class="watcher-history"></div>
+          </div>
+        </section>
       </div>
 
       <footer class="settings-footer">

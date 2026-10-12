@@ -131,3 +131,42 @@ func TestRecentFileReportsMissingPath(t *testing.T) {
 		t.Fatalf("missing recent file should be retained but unavailable: %#v", recent)
 	}
 }
+
+func TestSettingsVersionOneMigrationDefaultsWatcherDisabled(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	data := []byte(`{"version":1,"settings":{"defaultView":"source","rememberRecentFiles":true,"recentFilesLimit":5}}`)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := newStateStore(path).load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Version != settingsVersion || loaded.Settings.DefaultView != "source" || loaded.Settings.RecentFilesLimit != 5 {
+		t.Fatalf("older settings not preserved: %#v", loaded)
+	}
+	watcher := loaded.Settings.Watcher
+	if watcher.Enabled || watcher.WatchFolder == "" || watcher.OutputFolder == "" || !watcher.Recursive || !watcher.ConvertExisting {
+		t.Fatalf("watcher did not migrate to safe disabled defaults: %#v", watcher)
+	}
+}
+
+func TestAppLegacySettingsSaveDoesNotDisableWatcher(t *testing.T) {
+	store := newStateStore(filepath.Join(t.TempDir(), "settings.json"))
+	prior := defaultPersistedState().Settings
+	prior.Watcher.Paused = true
+	// Keep the watcher disabled so the regression test doesn't rely on an
+	// actual Documents directory or launch a background scanner.
+	prior.Watcher.Enabled = false
+	app := newApp(store, nil)
+	if _, err := store.saveSettings(prior); err != nil {
+		t.Fatal(err)
+	}
+	next, err := app.SaveSettings(AppSettings{DefaultView: "source", RememberRecentFiles: true, RecentFilesLimit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Watcher != prior.Watcher {
+		t.Fatalf("legacy UI overwrote watcher configuration: got %#v want %#v", next.Watcher, prior.Watcher)
+	}
+}

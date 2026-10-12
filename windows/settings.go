@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	settingsVersion         = 1
+	settingsVersion         = 2
 	defaultRecentFilesLimit = 10
 	minRecentFilesLimit     = 3
 	maxRecentFilesLimit     = 20
@@ -19,9 +19,10 @@ const (
 
 // AppSettings contains user-facing settings that are safe to expose to the UI.
 type AppSettings struct {
-	DefaultView         string `json:"defaultView"`
-	RememberRecentFiles bool   `json:"rememberRecentFiles"`
-	RecentFilesLimit    int    `json:"recentFilesLimit"`
+	DefaultView         string          `json:"defaultView"`
+	RememberRecentFiles bool            `json:"rememberRecentFiles"`
+	RecentFilesLimit    int             `json:"recentFilesLimit"`
+	Watcher             WatcherSettings `json:"watcher"`
 }
 
 // RecentFile is one recent Markdown document displayed by the Windows shell.
@@ -63,6 +64,7 @@ func defaultPersistedState() persistedState {
 			DefaultView:         "preview",
 			RememberRecentFiles: true,
 			RecentFilesLimit:    defaultRecentFilesLimit,
+			Watcher:             defaultWatcherSettings(),
 		},
 	}
 }
@@ -85,18 +87,21 @@ func normalizeSettings(value AppSettings) AppSettings {
 		DefaultView:         view,
 		RememberRecentFiles: value.RememberRecentFiles,
 		RecentFilesLimit:    limit,
+		Watcher:             normalizeWatcherSettings(value.Watcher),
 	}
 }
 
 func normalizePersistedState(value persistedState) persistedState {
-	if value.Version <= 0 {
-		value.Version = settingsVersion
-	}
+	oldVersion := value.Version
+	value.Version = settingsVersion
 	if strings.TrimSpace(value.Settings.DefaultView) == "" && value.Settings.RecentFilesLimit == 0 && !value.Settings.RememberRecentFiles {
 		// A zero-value settings object from an older or incomplete file should use product defaults.
 		value.Settings = defaultPersistedState().Settings
 	} else {
 		value.Settings = normalizeSettings(value.Settings)
+	}
+	if oldVersion < settingsVersion {
+		value.Settings.Watcher = defaultWatcherSettings()
 	}
 	if !value.Settings.RememberRecentFiles {
 		value.RecentFiles = nil

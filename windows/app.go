@@ -39,6 +39,7 @@ type App struct {
 	ctx         context.Context
 	store       *stateStore
 	startupPath string
+	watcher     *folderWatcher
 }
 
 func NewApp() *App {
@@ -47,6 +48,7 @@ func NewApp() *App {
 
 func newApp(store *stateStore, args []string) *App {
 	return &App{
+		watcher:     newFolderWatcher(store),
 		store:       store,
 		startupPath: markdownArgument(args),
 	}
@@ -54,6 +56,16 @@ func newApp(store *stateStore, args []string) *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	settings, err := a.store.settings()
+	if err == nil {
+		err = a.watcher.configure(settings.Watcher)
+	}
+	if err != nil {
+		a.watcher.mu.Lock()
+		a.watcher.status.Enabled = settings.Watcher.Enabled
+		a.watcher.recordErrorLocked("", fmt.Errorf("start folder monitor: %w", err))
+		a.watcher.mu.Unlock()
+	}
 }
 
 // Version returns the current application version for the shell UI.
@@ -68,8 +80,46 @@ func (a *App) Settings() (AppSettings, error) {
 
 // SaveSettings persists user-facing application settings.
 func (a *App) SaveSettings(settings AppSettings) (AppSettings, error) {
-	return a.store.saveSettings(settings)
+	// Older clients do not send the watcher field; do not silently switch off
+	// an existing monitor when only document preferences are updated.
+	if settings.Watcher == (WatcherSettings{}) {
+		previous, err := a.store.settings()
+		if err != nil {
+			return AppSettings{}, err
+		}
+		settings.Watcher = previous.Watcher
+	}
+	normalized, err := validateWatcherSettings(settings.Watcher)
+	if err != nil {
+		return AppSettings{}, err
+	}
+	settings.Watcher = normalized
+	if err := prepareWatcherFolders(normalized); err != nil {
+		return AppSettings{}, err
+	}
+	saved, err := a.store.saveSettings(settings)
+	if err != nil {
+		return AppSettings{}, err
+	}
+	if err = a.watcher.configure(saved.Watcher); err != nil {
+		return saved, err
+	}
+	return saved, nil
 }
+
+// WatcherStatus exposes bounded monitoring history without blocking document edits.
+func (a *App) WatcherStatus() WatcherStatus { return a.watcher.snapshot() }
+
+// BrowseWatcherFolder opens a native directory chooser for either watcher path.
+func (a *App) BrowseWatcherFolder() (string, error) {
+	if a.ctx == nil {
+		return "", errors.New("application is not ready")
+	}
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: "Select folder for Markdown automatic conversion"})
+}
+
+// shutdown cancels background scans before Wails exits.
+func (a *App) shutdown(_ context.Context) { a.watcher.stop() }
 
 // RecentFiles returns the recent Markdown files known to the application.
 func (a *App) RecentFiles() ([]RecentFile, error) {

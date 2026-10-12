@@ -813,3 +813,18 @@ button {
 .find-bar #findCount { white-space: nowrap; font-size: 0.85rem; }
 .md-find-match { background: #ffe78a; color: #172033; border-radius: 2px; }
 .md-find-match.current { background: #ffae45; outline: 2px solid #ad5a00; }
+
+/* Folder Watcher preview: settings remain usable on compact Windows screens. */
+.settings-card { max-height: calc(100vh - 30px); display: flex; flex-direction: column; }
+.settings-body { overflow-y: auto; min-height: 0; }
+.watcher-settings { display: grid; gap: 12px; padding-top: 18px; border-top: 1px solid #e5e9f0; }
+.watcher-settings h3 { margin: 0; font-size: 14px; color: #172033; }
+.settings-preview { font-size: 10px; font-weight: 600; padding: 2px 5px; border-radius: 4px; color: #445570; background: #e9edf4; }
+.settings-note { margin: 0; color: #66738a; font-size: 11px; line-height: 1.5; }
+.path-picker { display: flex; align-items: stretch; gap: 6px; }
+.path-picker input { min-width: 0; flex: 1; padding: 8px; border: 1px solid #ccd4e0; border-radius: 7px; color: #25324a; font-size: 12px; font-family: inherit; }
+.path-picker button { flex: none; }
+.watcher-status { display: grid; gap: 4px; padding: 10px; border: 1px solid #e0e5ed; border-radius: 8px; background: #f9fafc; font-size: 11px; }
+.watcher-status small { color: #64748b; }
+.watcher-history { display: grid; gap: 3px; color: #56657b; overflow-wrap: anywhere; }
+.watcher-history .watcher-error { color: #b42318; }

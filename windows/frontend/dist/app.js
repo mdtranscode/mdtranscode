@@ -8,6 +8,7 @@
       defaultView: "preview",
       rememberRecentFiles: true,
       recentFilesLimit: 10,
+      watcher: {},
     },
   };
 
@@ -50,6 +51,9 @@
     elements.defaultViewSelect = document.getElementById("defaultViewSelect");
     elements.rememberRecentCheckbox = document.getElementById("rememberRecentCheckbox");
     elements.recentLimitSelect = document.getElementById("recentLimitSelect");
+    for (const id of ["watcherEnabled", "watcherPaused", "watcherInputPath", "watcherOutputPath", "watcherBrowseInput", "watcherBrowseOutput", "watcherRecursive", "watcherConvertExisting", "watcherStatusLine", "watcherLastScan", "watcherHistory"]) {
+      elements[id] = document.getElementById(id);
+    }
 
     elements.findButton.addEventListener("click", openFind);
     elements.findClose.addEventListener("click", closeFind);
@@ -75,6 +79,11 @@
     elements.settingsCancelButton.addEventListener("click", closeSettings);
     elements.settingsSaveButton.addEventListener("click", saveSettings);
     elements.rememberRecentCheckbox.addEventListener("change", updateSettingsControls);
+    elements.watcherBrowseInput.addEventListener("click", () => browseWatcherFolder("watcherInputPath"));
+    elements.watcherBrowseOutput.addEventListener("click", () => browseWatcherFolder("watcherOutputPath"));
+    window.setInterval(() => {
+      if (!elements.settingsModal.classList.contains("hidden")) refreshWatcherStatus();
+    }, 5000);
     elements.settingsModal.addEventListener("click", (event) => {
       if (event.target === elements.settingsModal) {
         closeSettings();
@@ -430,6 +439,7 @@
 
   function openSettings() {
     populateSettingsControls();
+    refreshWatcherStatus();
     elements.settingsModal.classList.remove("hidden");
     elements.settingsModal.setAttribute("aria-hidden", "false");
     elements.defaultViewSelect.focus();
@@ -450,7 +460,42 @@
     } else {
       elements.recentLimitSelect.value = "10";
     }
+    const watcher = state.settings.watcher || {};
+    elements.watcherEnabled.checked = Boolean(watcher.enabled);
+    elements.watcherPaused.checked = Boolean(watcher.paused);
+    elements.watcherInputPath.value = watcher.watchFolder || "";
+    elements.watcherOutputPath.value = watcher.outputFolder || "";
+    elements.watcherRecursive.checked = Boolean(watcher.recursive);
+    elements.watcherConvertExisting.checked = Boolean(watcher.convertExisting);
     updateSettingsControls();
+  }
+
+  async function browseWatcherFolder(id) {
+    try {
+      const selected = await window.go.main.App.BrowseWatcherFolder();
+      if (selected) elements[id].value = selected;
+    } catch (error) {
+      showToast(normalizeError(error), true);
+    }
+  }
+
+  async function refreshWatcherStatus() {
+    try {
+      const status = await window.go.main.App.WatcherStatus();
+      if (elements.settingsModal.classList.contains("hidden")) return;
+      const condition = status.running ? "Monitoring" : status.paused ? "Paused" : status.enabled ? "Stopped" : "Disabled";
+      elements.watcherStatusLine.textContent = `${condition} · ${status.converted || 0} converted · ${status.pending || 0} settling · ${status.errors || 0} errors`;
+      elements.watcherLastScan.textContent = status.lastScan ? `Last scan: ${formatDate(status.lastScan)}` : "No successful scan yet";
+      elements.watcherHistory.replaceChildren();
+      (status.history || []).slice(0, 5).forEach((entry) => {
+        const node = document.createElement("div");
+        if (entry.result === "error") node.className = "watcher-error";
+        node.textContent = `${entry.result}: ${entry.source || "Watcher"}${entry.message ? " — " + entry.message : ""}`;
+        elements.watcherHistory.appendChild(node);
+      });
+    } catch (error) {
+      elements.watcherStatusLine.textContent = `Status unavailable: ${normalizeError(error)}`;
+    }
   }
 
   function updateSettingsControls() {
@@ -464,6 +509,14 @@
         defaultView: elements.defaultViewSelect.value,
         rememberRecentFiles: elements.rememberRecentCheckbox.checked,
         recentFilesLimit: Number.parseInt(elements.recentLimitSelect.value, 10),
+        watcher: {
+          enabled: elements.watcherEnabled.checked,
+          paused: elements.watcherPaused.checked,
+          watchFolder: elements.watcherInputPath.value.trim(),
+          outputFolder: elements.watcherOutputPath.value.trim(),
+          recursive: elements.watcherRecursive.checked,
+          convertExisting: elements.watcherConvertExisting.checked,
+        },
       });
       closeSettings();
       await refreshRecentFiles();
