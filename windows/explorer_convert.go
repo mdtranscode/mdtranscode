@@ -19,6 +19,13 @@ const (
 // before the Wails application starts. Successful conversions are intentionally
 // silent; Explorer will surface the newly-created document beside the Markdown file.
 func runExplorerConversion(args []string) (bool, string, error) {
+	return runExplorerConversionWithStore(args, defaultStateStore())
+}
+
+// runExplorerConversionWithStore uses the supplied settings store so tests can
+// exercise Explorer conversion without reading or modifying real user settings.
+// Production always passes defaultStateStore() from runExplorerConversion.
+func runExplorerConversionWithStore(args []string, store *stateStore) (bool, string, error) {
 	inputPath, format, handled, err := explorerConversionInput(args)
 	if !handled || err != nil {
 		return handled, "", err
@@ -40,12 +47,16 @@ func runExplorerConversion(args []string) (bool, string, error) {
 		Format:     format,
 		Creator:    appName,
 	}
-	if format == transcode.FormatPDF {
-		settings, settingsErr := defaultStateStore().settings()
+	{
+		settings, settingsErr := store.settings()
 		if settingsErr != nil {
-			return true, "", fmt.Errorf("load PDF settings: %w", settingsErr)
+			return true, "", fmt.Errorf("load conversion settings: %w", settingsErr)
 		}
-		convertOptions.PDF = settings.PDF
+		if format == transcode.FormatPDF {
+			convertOptions.PDF = settings.PDF
+		} else {
+			convertOptions.DOCX = settings.DOCX
+		}
 	}
 	result, err := transcode.ConvertFile(convertOptions)
 	if err != nil {

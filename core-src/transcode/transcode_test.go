@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mdtranscode/mdtranscode/core-src/renderer/docx"
 )
 
 func TestDefaultOutputPath(t *testing.T) {
@@ -119,4 +121,28 @@ func openDOCX(t *testing.T, path string) map[string][]byte {
 		parts[f.Name] = data
 	}
 	return parts
+}
+
+func TestConvertFilePassesExplicitDOCXStyleMode(t *testing.T) {
+	dir := t.TempDir()
+	input, output := filepath.Join(dir, "source.md"), filepath.Join(dir, "native.docx")
+	if err := os.WriteFile(input, []byte("# Heading\n\nHello.\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ConvertFile(FileOptions{InputPath: input, OutputPath: output, DOCX: docx.Options{Style: docx.StyleNative}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(openDOCX(t, output)["word/styles.xml"])
+	if !strings.Contains(styles, `w:styleId="Heading1"`) || strings.Contains(styles, `w:ascii="Aptos"`) {
+		t.Fatalf("native mode did not propagate to renderer")
+	}
+	invalid := filepath.Join(dir, "invalid.docx")
+	_, err = ConvertFile(FileOptions{InputPath: input, OutputPath: invalid, DOCX: docx.Options{Style: docx.StyleCustom}})
+	if err == nil {
+		t.Fatal("custom template mode unexpectedly succeeded")
+	}
+	if _, err := os.Stat(invalid); !os.IsNotExist(err) {
+		t.Fatalf("unsupported template wrote output: %v", err)
+	}
 }

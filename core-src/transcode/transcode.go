@@ -26,6 +26,7 @@ type FileOptions struct {
 	Title      string
 	Creator    string
 	PDF        pdf.Options
+	DOCX       docx.Options
 }
 
 // FileResult describes the resolved paths and format used for a successful conversion.
@@ -97,11 +98,10 @@ func ConvertFile(options FileOptions) (FileResult, error) {
 	}
 
 	parsed := markdown.Parse(string(source))
-	renderOptions := docx.Options{
-		BaseDir: filepath.Dir(inputAbs),
-		Title:   title,
-		Creator: creator,
-	}
+	renderOptions := options.DOCX
+	renderOptions.BaseDir = filepath.Dir(inputAbs)
+	renderOptions.Title = title
+	renderOptions.Creator = creator
 
 	if format == FormatPDF {
 		pdfOptions := options.PDF

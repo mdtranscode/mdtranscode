@@ -157,3 +157,24 @@ func TestCLIRejectsBadPDFMargin(t *testing.T) {
 		t.Fatal("invalid PDF margin accepted")
 	}
 }
+
+func TestCLIWordOptionsAndValidation(t *testing.T) {
+	args := []string{"report.md", "--to", "docx", "--word-style", "native", "--word-cover-title", "Client Report", "--word-company=Acme", "--word-toc", "--word-page-numbers", "--word-break-h1", "--word-landscape", "--word-paper", "A4"}
+	options, _, err := parseArgs(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.word.Style != "native" || options.word.CoverTitle != "Client Report" || options.word.Company != "Acme" || !options.word.TOC || !options.word.PageNumbers || !options.word.BreakBeforeH1 || !options.word.Landscape || options.word.PaperSize != "A4" {
+		t.Fatalf("unexpected Word settings: %+v", options.word)
+	}
+	for _, invalid := range [][]string{
+		{"report.md", "--to", "pdf", "--word-toc"},
+		{"report.md", "--word-style", "custom"},
+		{"report.md", "--word-template", "unapproved.dotx"},
+		{"report.md", "--word-style", "unknown"},
+	} {
+		if _, _, err := parseArgs(invalid); err == nil {
+			t.Fatalf("accepted invalid args: %v", invalid)
+		}
+	}
+}

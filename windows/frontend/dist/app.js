@@ -24,6 +24,10 @@
     elements.exportButton = document.getElementById("exportButton");
     elements.exportPDFButton = document.getElementById("exportPDFButton");
     for (const id of ["pdfPageSize","pdfOrientation","pdfMarginTop","pdfMarginRight","pdfMarginBottom","pdfMarginLeft","pdfHeaderText","pdfFooterText","pdfPageNumbers","pdfBookmarks","pdfBreakH1"]) elements[id] = document.getElementById(id);
+    for (const id of ["wordStyle","wordTemplate","wordBrowseTemplate","wordCoverTitle","wordSubtitle","wordCompany","wordLogoPath","wordBrowseLogo","wordHeader","wordFooter","wordPaper","wordPageNumbers","wordTOC","wordBreakH1","wordLandscape"]) elements[id] = document.getElementById(id);
+    elements.wordBrowseTemplate.addEventListener("click", browseWordTemplate);
+    elements.wordBrowseLogo.addEventListener("click", browseWordLogo);
+    elements.wordStyle.addEventListener("change", updateSettingsControls);
     elements.emptyDetails = document.getElementById("emptyDetails");
     elements.fileDetails = document.getElementById("fileDetails");
     elements.fileName = document.getElementById("fileName");
@@ -51,6 +55,8 @@
     elements.createdRevealButton = document.getElementById("createdRevealButton");
     elements.versionLabel = document.getElementById("versionLabel");
     elements.toast = document.getElementById("toast");
+    elements.settingsFeedback = document.getElementById("settingsFeedback");
+    elements.wordTemplate.addEventListener("change", inspectSelectedWordTemplate);
     elements.settingsModal = document.getElementById("settingsModal");
     elements.settingsCloseButton = document.getElementById("settingsCloseButton");
     elements.settingsCancelButton = document.getElementById("settingsCancelButton");
@@ -538,6 +544,10 @@
     elements.appShell.classList.add("settings-open");
     elements.settingsModal.classList.remove("hidden");
     elements.settingsModal.setAttribute("aria-hidden", "false");
+    clearSettingsFeedback();
+    if (elements.wordStyle.value === "custom" && elements.wordTemplate.value.trim()) {
+      await inspectSelectedWordTemplate();
+    }
     elements.defaultViewSelect.focus();
   }
 
@@ -545,6 +555,7 @@
     elements.appShell.classList.remove("settings-open");
     elements.settingsModal.classList.add("hidden");
     elements.settingsModal.setAttribute("aria-hidden", "true");
+    clearSettingsFeedback();
     elements.settingsButton.focus();
   }
 
@@ -574,7 +585,66 @@
     elements.pdfPageNumbers.checked=pdf.pageNumbers !== false;
     elements.pdfBookmarks.checked=pdf.bookmarks !== false;
     elements.pdfBreakH1.checked=Boolean(pdf.pageBreakBeforeH1);
+    const word = state.settings.docx || {};
+    elements.wordStyle.value = word.style || "standard";
+    elements.wordTemplate.value = word.templatePath || "";
+    elements.wordCoverTitle.value = word.coverTitle || "";
+    elements.wordSubtitle.value = word.subtitle || "";
+    elements.wordCompany.value = word.company || "";
+    elements.wordLogoPath.value = word.logoPath || "";
+    elements.wordHeader.value = word.headerText || "";
+    elements.wordFooter.value = word.footerText || "";
+    elements.wordPaper.value = word.paperSize || "Letter";
+    elements.wordPageNumbers.checked = Boolean(word.pageNumbers);
+    elements.wordTOC.checked = Boolean(word.toc);
+    elements.wordBreakH1.checked = Boolean(word.breakBeforeH1);
+    elements.wordLandscape.checked = Boolean(word.landscape);
     updateSettingsControls();
+  }
+
+  async function browseWordTemplate() {
+    try {
+      const path = await window.go.main.App.BrowseWordTemplate();
+      if(path) {elements.wordTemplate.value=path; elements.wordStyle.value="custom";updateSettingsControls();await inspectSelectedWordTemplate();}
+    } catch(error) {showToast(normalizeError(error),true);}
+  }
+
+  function clearSettingsFeedback() {
+    elements.settingsFeedback.textContent = "";
+    elements.settingsFeedback.classList.add("hidden");
+    elements.settingsFeedback.classList.remove("error", "warning");
+  }
+
+  function showSettingsFeedback(message, kind) {
+    elements.settingsFeedback.textContent = message;
+    elements.settingsFeedback.classList.remove("hidden", "error", "warning");
+    elements.settingsFeedback.classList.add(kind === "warning" ? "warning" : "error");
+  }
+
+  async function inspectSelectedWordTemplate() {
+    clearSettingsFeedback();
+    if (elements.wordStyle.value !== "custom" || !elements.wordTemplate.value.trim()) return [];
+    try {
+      const warnings = await window.go.main.App.InspectWordTemplate(elements.wordTemplate.value.trim());
+      if (Array.isArray(warnings) && warnings.length) {
+        showSettingsFeedback(`Word template warning: ${warnings.join(" ")}`, "warning");
+      }
+      return warnings || [];
+    } catch (error) {
+      // SaveSettings remains the authoritative validation gate.
+      showSettingsFeedback(`Word template: ${normalizeError(error)}`, "error");
+      return [];
+    }
+  }
+
+  async function browseWordLogo() {
+    try {
+      const path = await window.go.main.App.BrowseWordLogo();
+      // A cancelled native picker returns an empty path; keep the prior logo.
+      if (path) elements.wordLogoPath.value = path;
+    } catch (error) {
+      showToast(normalizeError(error), true);
+    }
   }
 
   async function browseWatcherFolder(id) {
@@ -607,6 +677,9 @@
 
   function updateSettingsControls() {
     elements.recentLimitSelect.disabled = !elements.rememberRecentCheckbox.checked;
+    elements.wordTemplate.disabled = elements.wordStyle.value !== "custom";
+    elements.wordBrowseTemplate.disabled = elements.wordStyle.value !== "custom";
+    if (elements.wordStyle.value !== "custom") clearSettingsFeedback();
   }
 
   async function saveSettings() {
@@ -619,6 +692,21 @@
         // Preserve legacy saved flag without initiating GitHub checks.
         updateNotifications: Boolean(state.settings.updateNotifications),
         closeToTray: elements.closeToTrayCheckbox.checked,
+        docx: {
+          style: elements.wordStyle.value,
+          templatePath: elements.wordStyle.value==="custom" ? elements.wordTemplate.value.trim():"",
+          coverTitle:elements.wordCoverTitle.value,
+          subtitle:elements.wordSubtitle.value,
+          company:elements.wordCompany.value,
+          logoPath:elements.wordLogoPath.value.trim(),
+          headerText:elements.wordHeader.value,
+          footerText:elements.wordFooter.value,
+          paperSize:elements.wordPaper.value,
+          pageNumbers:elements.wordPageNumbers.checked,
+          toc:elements.wordTOC.checked,
+          breakBeforeH1:elements.wordBreakH1.checked,
+          landscape:elements.wordLandscape.checked,
+        },
         pdf: {
           pageSize:elements.pdfPageSize.value,
           orientation:elements.pdfOrientation.value,
@@ -641,8 +729,15 @@
           convertExisting: elements.watcherConvertExisting.checked,
         },
       });
-      closeSettings();
       await refreshRecentFiles();
+      if (elements.wordStyle.value === "custom") {
+        const warnings = await inspectSelectedWordTemplate();
+        if (warnings.length) {
+          showSettingsFeedback(`Settings saved. Word template warning: ${warnings.join(" ")}`, "warning");
+          return;
+        }
+      }
+      closeSettings();
       showToast("Settings saved.", false);
     } catch (error) {
       showToast(normalizeError(error), true);
@@ -704,6 +799,10 @@
   }
 
   function showToast(message, isError) {
+    if (isError && !elements.settingsModal.classList.contains("hidden")) {
+      showSettingsFeedback(message, "error");
+      return;
+    }
     clearTimeout(state.toastTimer);
     elements.toast.textContent = message;
     elements.toast.classList.toggle("error", Boolean(isError));

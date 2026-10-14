@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/mdtranscode/mdtranscode/core-src/renderer/docx"
 	"github.com/mdtranscode/mdtranscode/core-src/renderer/pdf"
 	"os"
 	"path/filepath"
@@ -12,7 +13,7 @@ import (
 )
 
 const (
-	settingsVersion         = 5
+	settingsVersion         = 6
 	defaultRecentFilesLimit = 10
 	minRecentFilesLimit     = 3
 	maxRecentFilesLimit     = 20
@@ -27,6 +28,7 @@ type AppSettings struct {
 	UpdateNotifications bool            `json:"updateNotifications"`
 	CloseToTray         bool            `json:"closeToTray"`
 	PDF                 pdf.Options     `json:"pdf"`
+	DOCX                docx.Options    `json:"docx"`
 }
 
 // RecentFile is one recent Markdown document displayed by the Windows shell.
@@ -72,6 +74,7 @@ func defaultPersistedState() persistedState {
 			UpdateNotifications: true,
 			CloseToTray:         true,
 			PDF:                 pdf.Defaults(),
+			DOCX:                docx.Options{Style: docx.StyleStandard},
 		},
 	}
 }
@@ -93,7 +96,11 @@ func normalizeSettings(value AppSettings) AppSettings {
 	if value.PDF.PageSize == "" {
 		value.PDF = pdf.Defaults()
 	}
+	if value.DOCX.Style == "" {
+		value.DOCX.Style = docx.StyleStandard
+	}
 	return AppSettings{
+		DOCX:                value.DOCX,
 		DefaultView:         view,
 		RememberRecentFiles: value.RememberRecentFiles,
 		RecentFilesLimit:    limit,
@@ -118,6 +125,9 @@ func normalizePersistedState(value persistedState) persistedState {
 	}
 	if oldVersion < 3 {
 		value.Settings.UpdateNotifications = true
+	}
+	if oldVersion < 6 {
+		value.Settings.DOCX = docx.Options{Style: docx.StyleStandard}
 	}
 	if oldVersion < 5 {
 		value.Settings.PDF = pdf.Defaults()

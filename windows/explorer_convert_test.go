@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mdtranscode/mdtranscode/core-src/renderer/docx"
 )
 
 func TestExplorerConversionInput(t *testing.T) {
@@ -80,12 +82,15 @@ func TestNextAvailableDOCXPathDoesNotOverwrite(t *testing.T) {
 
 func TestRunExplorerConversionUsesCoreAndPreservesExistingOutput(t *testing.T) {
 	dir := t.TempDir()
+	// Real Windows users may select an unavailable custom .dotx in Settings.
+	// Conversion tests must not read that profile or modify it.
+	store := newStateStore(filepath.Join(dir, "test-settings.json"))
 	input := filepath.Join(dir, "Résumé.md")
 	if err := os.WriteFile(input, []byte("# Explorer Convert\n\n- one\n- two\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	handled, firstOutput, err := runExplorerConversion([]string{explorerConvertDOCXFlag, input})
+	handled, firstOutput, err := runExplorerConversionWithStore([]string{explorerConvertDOCXFlag, input}, store)
 	if err != nil {
 		t.Fatalf("first runExplorerConversion returned error: %v", err)
 	}
@@ -105,7 +110,7 @@ func TestRunExplorerConversionUsesCoreAndPreservesExistingOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	handled, secondOutput, err := runExplorerConversion([]string{explorerConvertDOCXFlag, input})
+	handled, secondOutput, err := runExplorerConversionWithStore([]string{explorerConvertDOCXFlag, input}, store)
 	if err != nil {
 		t.Fatalf("second runExplorerConversion returned error: %v", err)
 	}
@@ -127,9 +132,36 @@ func TestRunExplorerConversionUsesCoreAndPreservesExistingOutput(t *testing.T) {
 }
 
 func TestRunExplorerConversionRejectsUnsupportedInput(t *testing.T) {
-	handled, _, err := runExplorerConversion([]string{explorerConvertDOCXFlag, "report.txt"})
+	store := newStateStore(filepath.Join(t.TempDir(), "settings.json"))
+	handled, _, err := runExplorerConversionWithStore([]string{explorerConvertDOCXFlag, "report.txt"}, store)
 	if !handled || err == nil || !strings.Contains(err.Error(), "not a supported Markdown file") {
 		t.Fatalf("expected unsupported Markdown error, got handled=%v err=%v", handled, err)
+	}
+}
+
+func TestRunExplorerConversionRespectsCustomTemplateSetting(t *testing.T) {
+	dir := t.TempDir()
+	store := newStateStore(filepath.Join(dir, "settings.json"))
+	settings := defaultPersistedState().Settings
+	settings.DOCX.Style = docx.StyleCustom
+	settings.DOCX.TemplatePath = filepath.Join(dir, "unavailable-company.dotx")
+	if _, err := store.saveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	input := filepath.Join(dir, "report.md")
+	if err := os.WriteFile(input, []byte("# Report\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	handled, output, err := runExplorerConversionWithStore([]string{explorerConvertDOCXFlag, input}, store)
+	if !handled || err == nil || !strings.Contains(err.Error(), "open Word template") {
+		t.Fatalf("custom template failure: handled=%v output=%q err=%v", handled, output, err)
+	}
+	if output != "" {
+		t.Fatalf("failed conversion returned output path %q", output)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "report.docx")); !os.IsNotExist(statErr) {
+		t.Fatalf("custom template failure should not leave a DOCX: %v", statErr)
 	}
 }
 

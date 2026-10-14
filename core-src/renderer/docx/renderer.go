@@ -28,12 +28,50 @@ const (
 	relImage     = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
 )
 
+// StyleMode selects how Word paragraph and character styles are generated.
+// The zero value is Standard to preserve existing DOCX output.
+type StyleMode string
+
+const (
+	StyleStandard StyleMode = "standard"
+	StyleNative   StyleMode = "native"
+	// StyleCustom imports the validated style/theme subset of a .dotx template.
+	StyleCustom StyleMode = "custom"
+)
+
 // Options controls DOCX rendering. BaseDir is used to resolve relative image
 // paths from the original Markdown document.
 type Options struct {
-	BaseDir string
-	Title   string
-	Creator string
+	BaseDir string    `json:"baseDir,omitempty"`
+	Title   string    `json:"title,omitempty"`
+	Creator string    `json:"creator,omitempty"`
+	Style   StyleMode `json:"style,omitempty"`
+	// TemplatePath is required for custom styling. Only safe styles/themes are imported.
+	TemplatePath  string `json:"templatePath,omitempty"`
+	CoverTitle    string `json:"coverTitle,omitempty"`
+	Subtitle      string `json:"subtitle,omitempty"`
+	Company       string `json:"company,omitempty"`
+	LogoPath      string `json:"logoPath,omitempty"`
+	HeaderText    string `json:"headerText,omitempty"`
+	FooterText    string `json:"footerText,omitempty"`
+	PageNumbers   bool   `json:"pageNumbers,omitempty"`
+	TOC           bool   `json:"toc,omitempty"`
+	BreakBeforeH1 bool   `json:"breakBeforeH1,omitempty"`
+	Landscape     bool   `json:"landscape,omitempty"`
+	PaperSize     string `json:"paperSize,omitempty"` // Letter (default), A4
+}
+
+func normalizeStyle(mode StyleMode) (StyleMode, error) {
+	switch mode {
+	case "", StyleStandard:
+		return StyleStandard, nil
+	case StyleNative:
+		return StyleNative, nil
+	case StyleCustom:
+		return StyleCustom, nil
+	default:
+		return "", fmt.Errorf("unsupported Word style mode %q", mode)
+	}
 }
 
 type relationship struct {
@@ -60,6 +98,7 @@ type builder struct {
 	imageSeq     int
 	orderedNum   map[int]int
 	orderedStart map[int]int
+	template     *wordTemplate
 }
 
 // Render converts a parsed document model into a DOCX package in memory.
@@ -67,7 +106,35 @@ func Render(doc *document.Document, options Options) ([]byte, error) {
 	if doc == nil {
 		return nil, errors.New("document is nil")
 	}
+	style, err := normalizeStyle(options.Style)
+	if err != nil {
+		return nil, err
+	}
+	options.Style = style
+	if style != StyleCustom && strings.TrimSpace(options.TemplatePath) != "" {
+		return nil, errors.New("Word template path requires custom style mode")
+	}
+	if style == StyleCustom && strings.TrimSpace(options.TemplatePath) == "" {
+		return nil, errors.New("custom Word style requires a .dotx template path")
+	}
+	if strings.HasPrefix(strings.ToLower(options.LogoPath), "http://") || strings.HasPrefix(strings.ToLower(options.LogoPath), "https://") || strings.HasPrefix(strings.ToLower(options.LogoPath), "data:") {
+		return nil, errors.New("cover logo must be a local image path")
+	}
+	if options.PaperSize != "" && !strings.EqualFold(options.PaperSize, "letter") && !strings.EqualFold(options.PaperSize, "a4") {
+		return nil, fmt.Errorf("unsupported Word paper size %q", options.PaperSize)
+	}
+	if len(options.HeaderText) > 500 || len(options.FooterText) > 500 || len(options.CoverTitle) > 500 || len(options.Subtitle) > 500 || len(options.Company) > 500 {
+		return nil, errors.New("Word branding text is too long")
+	}
+	var template *wordTemplate
+	if style == StyleCustom {
+		template, err = loadWordTemplate(options.TemplatePath)
+		if err != nil {
+			return nil, err
+		}
+	}
 	b := newBuilder(doc, options)
+	b.template = template
 	return b.render()
 }
 
@@ -147,10 +214,19 @@ func (b *builder) render() ([]byte, error) {
 		{"docProps/core.xml", b.corePropsXML()},
 		{"docProps/app.xml", appPropsXML()},
 		{"word/document.xml", documentXML},
-		{"word/styles.xml", stylesXML()},
+		{"word/styles.xml", b.stylesXML()},
 		{"word/numbering.xml", b.numberingXML()},
-		{"word/settings.xml", settingsXML()},
+		{"word/settings.xml", settingsXMLForOptions(b.options)},
 		{"word/_rels/document.xml.rels", b.documentRelsXML()},
+	}
+	if b.template != nil && b.template.theme != "" {
+		parts = append(parts, struct{ name, content string }{"word/theme/theme1.xml", b.template.theme})
+	}
+	if b.options.HeaderText != "" {
+		parts = append(parts, struct{ name, content string }{"word/header1.xml", headerFooterXML(b.options.HeaderText, false, false)})
+	}
+	if b.options.FooterText != "" || b.options.PageNumbers {
+		parts = append(parts, struct{ name, content string }{"word/footer1.xml", headerFooterXML(b.options.FooterText, true, b.options.PageNumbers)})
 	}
 	for _, part := range parts {
 		if err := addText(part.name, part.content); err != nil {
@@ -258,9 +334,61 @@ func (b *builder) documentXML() (string, error) {
 	out.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`)
 	out.WriteString(`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>`)
 
+	if b.options.CoverTitle != "" || b.options.Subtitle != "" || b.options.Company != "" || b.options.LogoPath != "" {
+		if b.options.LogoPath != "" {
+			rid, media, err := b.addImage(b.options.LogoPath)
+			if err != nil {
+				return "", fmt.Errorf("cover logo: %w", err)
+			}
+			// Fixed, conservative cover-logo limits, regardless of paper size or
+			// orientation: 1.25 in tall and 3 in wide. Keep its aspect ratio;
+			// regular Markdown images retain the existing six-inch limit.
+			const maxCoverLogoHeight = int64(1143000)
+			const maxCoverLogoWidth = int64(2743200)
+			if media.cy > maxCoverLogoHeight {
+				media.cx = media.cx * maxCoverLogoHeight / media.cy
+				media.cy = maxCoverLogoHeight
+			}
+			if media.cx > maxCoverLogoWidth {
+				media.cy = media.cy * maxCoverLogoWidth / media.cx
+				media.cx = maxCoverLogoWidth
+			}
+			out.WriteString(`<w:p><w:pPr><w:jc w:val="center"/></w:pPr>`)
+			out.WriteString(imageRunXML(rid, *media, b.imageSeq))
+			out.WriteString(`</w:p>`)
+		}
+		for _, entry := range []struct {
+			text string
+			size int
+			bold bool
+		}{
+			{b.options.CoverTitle, 40, true}, {b.options.Subtitle, 26, false}, {b.options.Company, 22, false},
+		} {
+			if entry.text == "" {
+				continue
+			}
+			bold := ""
+			if entry.bold {
+				bold = `<w:b/>`
+			}
+			out.WriteString(fmt.Sprintf(`<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr>%s<w:sz w:val="%d"/></w:rPr><w:t xml:space="preserve">%s</w:t></w:r></w:p>`, bold, entry.size, xmlEsc(entry.text)))
+		}
+		out.WriteString(`<w:p><w:r><w:br w:type="page"/></w:r></w:p>`)
+	}
+	if b.options.TOC {
+		out.WriteString(b.tocXML())
+		out.WriteString(`<w:p><w:r><w:br w:type="page"/></w:r></w:p>`)
+	}
+	// Cover and TOC already separate themselves from body content. An H1
+	// at the start of the body must not insert a second page break (which
+	// previously created an entirely blank page before the first heading).
+	bodyContentWritten := false
 	for _, block := range b.doc.Blocks {
 		switch block.Kind {
 		case document.BlockHeading:
+			if block.Level == 1 && b.options.BreakBeforeH1 && bodyContentWritten {
+				out.WriteString(`<w:p><w:r><w:br w:type="page"/></w:r></w:p>`)
+			}
 			xml, err := b.paragraphXML(block.Inlines, fmt.Sprintf("Heading%d", block.Level), block.QuoteLevel, 0, 0, "", false)
 			if err != nil {
 				return "", err
@@ -301,10 +429,58 @@ func (b *builder) documentXML() (string, error) {
 		case document.BlockRule:
 			out.WriteString(ruleXML(block.QuoteLevel))
 		}
+		bodyContentWritten = true
 	}
 
-	out.WriteString(`<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1080" w:right="1080" w:bottom="1080" w:left="1080" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>`)
+	width, height := 12240, 15840
+	if strings.EqualFold(b.options.PaperSize, "a4") {
+		width, height = 11906, 16838
+	}
+	orient := ""
+	if b.options.Landscape {
+		width, height = height, width
+		orient = ` w:orient="landscape"`
+	}
+	out.WriteString(`<w:sectPr>`)
+	if b.options.HeaderText != "" {
+		out.WriteString(`<w:headerReference w:type="default" r:id="rIdHeader"/>`)
+	}
+	if b.options.FooterText != "" || b.options.PageNumbers {
+		out.WriteString(`<w:footerReference w:type="default" r:id="rIdFooter"/>`)
+	}
+	out.WriteString(fmt.Sprintf(`<w:pgSz w:w="%d" w:h="%d"%s/>`, width, height, orient))
+	out.WriteString(`<w:pgMar w:top="1080" w:right="1080" w:bottom="1080" w:left="1080" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>`)
 	return out.String(), nil
+}
+
+// tocXML emits visible cached TOC entries, while retaining Word's editable
+// TOC field. Page numbers are intentionally not guessed: Word fills them in
+// when fields update. Without cached results, Word otherwise opens a blank TOC.
+func (b *builder) tocXML() string {
+	var out strings.Builder
+	out.WriteString(`<w:p><w:pPr><w:pStyle w:val="TOCHeading"/></w:pPr><w:r><w:t>Table of Contents</w:t></w:r></w:p>`)
+	out.WriteString(`<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \o "1-3" \h \z \u </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>`)
+	for _, block := range b.doc.Blocks {
+		if block.Kind != document.BlockHeading || block.Level < 1 || block.Level > 3 {
+			continue
+		}
+		var heading strings.Builder
+		for _, inline := range block.Inlines {
+			switch inline.Kind {
+			case document.InlineText:
+				heading.WriteString(inline.Text)
+			case document.InlineImage:
+				heading.WriteString(inline.Alt)
+			}
+		}
+		label := strings.TrimSpace(heading.String())
+		if label == "" {
+			continue
+		}
+		out.WriteString(fmt.Sprintf(`<w:p><w:pPr><w:pStyle w:val="TOC%d"/></w:pPr><w:r><w:t xml:space="preserve">%s</w:t></w:r></w:p>`, block.Level, xmlEsc(label)))
+	}
+	out.WriteString(`<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`)
+	return out.String()
 }
 
 func (b *builder) paragraphXML(inlines []document.Inline, style string, quoteLevel, numID, listLevel int, align string, forceBold bool) (string, error) {
@@ -315,7 +491,11 @@ func (b *builder) paragraphXML(inlines []document.Inline, style string, quoteLev
 	}
 	if quoteLevel > 0 {
 		left := 360 * quoteLevel
-		out.WriteString(fmt.Sprintf(`<w:ind w:left="%d"/><w:pBdr><w:left w:val="single" w:sz="12" w:space="8" w:color="B7B7B7"/></w:pBdr>`, left))
+		if b.options.Style == StyleNative {
+			out.WriteString(fmt.Sprintf(`<w:ind w:left="%d"/>`, left))
+		} else {
+			out.WriteString(fmt.Sprintf(`<w:ind w:left="%d"/><w:pBdr><w:left w:val="single" w:sz="12" w:space="8" w:color="B7B7B7"/></w:pBdr>`, left))
+		}
 	}
 	if numID > 0 {
 		if listLevel > 8 {
@@ -446,7 +626,11 @@ func (b *builder) tableXML(table document.Block) (string, error) {
 	}
 
 	var out strings.Builder
-	out.WriteString(`<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblLayout w:type="autofit"/><w:tblBorders><w:top w:val="single" w:sz="4" w:color="BFBFBF"/><w:left w:val="single" w:sz="4" w:color="BFBFBF"/><w:bottom w:val="single" w:sz="4" w:color="BFBFBF"/><w:right w:val="single" w:sz="4" w:color="BFBFBF"/><w:insideH w:val="single" w:sz="4" w:color="D9D9D9"/><w:insideV w:val="single" w:sz="4" w:color="D9D9D9"/></w:tblBorders></w:tblPr>`)
+	if b.options.Style == StyleNative {
+		out.WriteString(`<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblLayout w:type="autofit"/></w:tblPr>`)
+	} else {
+		out.WriteString(`<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblLayout w:type="autofit"/><w:tblBorders><w:top w:val="single" w:sz="4" w:color="BFBFBF"/><w:left w:val="single" w:sz="4" w:color="BFBFBF"/><w:bottom w:val="single" w:sz="4" w:color="BFBFBF"/><w:right w:val="single" w:sz="4" w:color="BFBFBF"/><w:insideH w:val="single" w:sz="4" w:color="D9D9D9"/><w:insideV w:val="single" w:sz="4" w:color="D9D9D9"/></w:tblBorders></w:tblPr>`)
+	}
 	out.WriteString(`<w:tblGrid>`)
 	for i := 0; i < columnCount; i++ {
 		out.WriteString(`<w:gridCol w:w="2400"/>`)
@@ -464,7 +648,7 @@ func (b *builder) tableXML(table document.Block) (string, error) {
 				cell = row.Cells[columnIndex]
 			}
 			out.WriteString(`<w:tc><w:tcPr>`)
-			if rowIndex == 0 {
+			if rowIndex == 0 && b.options.Style != StyleNative {
 				out.WriteString(`<w:shd w:val="clear" w:fill="EDEDED"/>`)
 			}
 			out.WriteString(`</w:tcPr>`)
@@ -523,6 +707,15 @@ func (b *builder) documentRelsXML() string {
 	out.WriteString(`<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`)
 	out.WriteString(`<Relationship Id="rIdNumbering" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>`)
 	out.WriteString(`<Relationship Id="rIdSettings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>`)
+	if b.template != nil && b.template.theme != "" {
+		out.WriteString(`<Relationship Id="rIdTheme" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>`)
+	}
+	if b.options.HeaderText != "" {
+		out.WriteString(`<Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>`)
+	}
+	if b.options.FooterText != "" || b.options.PageNumbers {
+		out.WriteString(`<Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>`)
+	}
 	for _, rel := range b.rels {
 		out.WriteString(`<Relationship Id="` + rel.id + `" Type="` + rel.typ + `" Target="` + xmlEsc(rel.target) + `"`)
 		if rel.mode != "" {
@@ -571,7 +764,18 @@ func (b *builder) numberingXML() string {
 }
 
 func (b *builder) contentTypesXML() string {
-	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpg" ContentType="image/jpeg"/><Default Extension="jpeg" ContentType="image/jpeg"/><Default Extension="gif" ContentType="image/gif"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`
+	extra := ""
+	if b.template != nil && b.template.theme != "" {
+		extra += `<Override PartName="/word/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>`
+	}
+	if b.options.HeaderText != "" {
+		extra += `<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>`
+	}
+	if b.options.FooterText != "" || b.options.PageNumbers {
+		extra += `<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>`
+	}
+	base := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="jpg" ContentType="image/jpeg"/><Default Extension="jpeg" ContentType="image/jpeg"/><Default Extension="gif" ContentType="image/gif"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`
+	return strings.Replace(base, `</Types>`, extra+`</Types>`, 1)
 }
 
 func rootRelsXML() string {
@@ -589,6 +793,41 @@ func appPropsXML() string {
 
 func settingsXML() string {
 	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:zoom w:val="bestFit"/><w:defaultTabStop w:val="720"/><w:characterSpacingControl w:val="doNotCompress"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/><w:compatSetting w:name="overrideTableStyleFontSizeAndJustification" w:uri="http://schemas.microsoft.com/office/word" w:val="1"/><w:compatSetting w:name="enableOpenTypeFeatures" w:uri="http://schemas.microsoft.com/office/word" w:val="1"/><w:compatSetting w:name="doNotFlipMirrorIndents" w:uri="http://schemas.microsoft.com/office/word" w:val="1"/></w:compat><w:themeFontLang w:val="en-US"/><w:decimalSymbol w:val="."/><w:listSeparator w:val=","/></w:settings>`
+}
+
+// Do not request an automatic refresh on open: Word can show a security-style
+// prompt about fields that may reference external files even when the only
+// generated document fields are the local TOC and PAGE fields. TOC headings are
+// already cached in document.xml; users can update TOC page numbers from Word.
+// Keep the previously accepted Standard settings XML unchanged for every mode.
+func settingsXMLForOptions(_ Options) string {
+	return settingsXML()
+}
+
+// stylesXML preserves the previously accepted Standard XML byte for byte.
+func (b *builder) stylesXML() string {
+	if b.options.Style == StyleCustom && b.template != nil {
+		return b.template.styles
+	}
+	if b.options.Style == StyleNative {
+		return nativeStylesXML()
+	}
+	return stylesXML()
+}
+
+// Native/Minimal keeps Word's semantic style hierarchy without imposing the
+// Standard mode's Aptos sizes, paragraph spacings, heading sizes or color fills.
+// It is self-contained: it never relies on an installed user's Normal.dotm.
+func nativeStylesXML() string {
+	var out strings.Builder
+	out.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">`)
+	out.WriteString(`<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>`)
+	for index := 1; index <= 6; index++ {
+		out.WriteString(fmt.Sprintf(`<w:style w:type="paragraph" w:styleId="Heading%d"><w:name w:val="heading %d"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:outlineLvl w:val="%d"/></w:pPr></w:style>`, index, index, index-1))
+	}
+	out.WriteString(`<w:style w:type="paragraph" w:styleId="CodeBlock"><w:name w:val="Code Block"/><w:basedOn w:val="Normal"/><w:pPr><w:keepLines/></w:pPr><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/></w:rPr></w:style>`)
+	out.WriteString(`<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:rPr><w:color w:themeColor="hyperlink"/><w:u w:val="single"/></w:rPr></w:style></w:styles>`)
+	return out.String()
 }
 
 func stylesXML() string {
@@ -613,5 +852,28 @@ func xmlEsc(value string) string {
 	}
 	var out bytes.Buffer
 	_ = xml.EscapeText(&out, []byte(clean.String()))
+	return out.String()
+}
+
+// headerFooterXML builds a standalone Word header/footer. PAGE fields are
+// updated by Word on open/print; cached content starts at page 1.
+func headerFooterXML(text string, footer, pageNumber bool) string {
+	root := "hdr"
+	if footer {
+		root = "ftr"
+	}
+	var out strings.Builder
+	out.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`)
+	out.WriteString(`<w:` + root + ` xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="center"/></w:pPr>`)
+	if text != "" {
+		out.WriteString(`<w:r><w:t xml:space="preserve">` + xmlEsc(text) + `</w:t></w:r>`)
+	}
+	if pageNumber {
+		if text != "" {
+			out.WriteString(`<w:r><w:t xml:space="preserve"> | </w:t></w:r>`)
+		}
+		out.WriteString(`<w:r><w:t>Page </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>`)
+	}
+	out.WriteString(`</w:p></w:` + root + `>`)
 	return out.String()
 }

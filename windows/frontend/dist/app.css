@@ -892,6 +892,30 @@ button {
 .settings-page .settings-header,
 .settings-page .settings-footer { flex: 0 0 auto; padding: 16px 26px; }
 .settings-page .settings-footer { position: relative; z-index: 1; box-shadow: 0 -2px 8px rgba(16,24,40,.04); }
+/* Persistent visible Settings validation, never hidden behind Save/Cancel. */
+.settings-page .settings-feedback {
+  flex: 0 0 auto;
+  max-height: 135px;
+  overflow-y: auto;
+  margin: 0 26px;
+  padding: 12px 14px;
+  border: 1px solid #e6a6a6;
+  border-radius: 8px;
+  background: #fff2f2;
+  color: #8c2727;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.settings-page .settings-feedback.warning {
+  border-color: #ebcc88;
+  background: #fff8e8;
+  color: #77520a;
+}
+@media (max-width: 700px) {
+  .settings-page .settings-feedback { margin: 0 16px; }
+}
+
 .settings-page .settings-header { display: flex; justify-content: space-between; align-items: center; }
 .settings-page .watcher-settings { border-top: 1px solid #e5e9f0; padding-top: 22px; }
 .integration-settings { border-top: 1px solid #e5e9f0; padding-top: 18px; display: grid; gap: 12px; }
@@ -1005,3 +1029,30 @@ button {
 .pdf-settings-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
 .pdf-settings input[type="number"], .pdf-settings input[type="text"] { width:100%;box-sizing:border-box;border:1px solid #c5d2de;border-radius:7px;padding:9px;min-width:0; }
 @media (max-width: 940px) { .topbar .actions {flex-wrap:wrap;justify-content:flex-end;gap:6px;} }
+
+/* Iteration 4: match Word text controls to the established Settings inputs. */
+.settings-page .setting-field input[type="text"] {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  border: 1px solid #ccd4e0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #25324a;
+  font: inherit;
+}
+.settings-page .setting-field input[type="text"]:focus-visible {
+  outline: 3px solid rgba(30, 93, 191, 0.28);
+  outline-offset: 2px;
+}
+.settings-page .document-view-grid { width: 100%; }
+@media (max-width: 600px) {
+  .settings-page .document-view-grid { grid-template-columns: 1fr; }
+}
+
+/* Iteration 4 acceptance: keep logo Browse aligned within its half-width cell. */
+.settings-page .word-logo-picker { min-width: 0; }
+.settings-page .word-logo-picker input[type="text"] { flex: 1 1 0; width: auto; }
+.settings-page .word-logo-picker button { min-height: 40px; }

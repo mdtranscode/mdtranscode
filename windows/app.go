@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mdtranscode/mdtranscode/core-src/markdown"
+	"github.com/mdtranscode/mdtranscode/core-src/renderer/docx"
 	htmlrenderer "github.com/mdtranscode/mdtranscode/core-src/renderer/html"
 	"github.com/mdtranscode/mdtranscode/core-src/renderer/pdf"
 	"github.com/mdtranscode/mdtranscode/core-src/transcode"
@@ -203,6 +204,19 @@ func (a *App) SaveSettings(settings AppSettings) (AppSettings, error) {
 			return AppSettings{}, err
 		}
 	}
+	if settings.DOCX.Style == "" {
+		settings.DOCX.Style = docx.StyleStandard
+	}
+	if settings.DOCX.Style != docx.StyleStandard && settings.DOCX.Style != docx.StyleNative && settings.DOCX.Style != docx.StyleCustom {
+		return AppSettings{}, errors.New("unsupported Word styling mode")
+	}
+	if settings.DOCX.Style == docx.StyleCustom {
+		if err := docx.ValidateTemplate(settings.DOCX.TemplatePath); err != nil {
+			return AppSettings{}, fmt.Errorf("Word template: %w", err)
+		}
+	} else if settings.DOCX.TemplatePath != "" {
+		return AppSettings{}, errors.New("template path requires Custom Word styling")
+	}
 	if err := prepareWatcherFolders(normalized); err != nil {
 		return AppSettings{}, err
 	}
@@ -214,6 +228,47 @@ func (a *App) SaveSettings(settings AppSettings) (AppSettings, error) {
 		return saved, err
 	}
 	return saved, nil
+}
+
+// InspectWordTemplate reports nonfatal style-only import notices. Template
+// validation errors remain fatal and are surfaced in Settings.
+func (a *App) InspectWordTemplate(path string) ([]string, error) {
+	return docx.TemplateWarnings(path)
+}
+
+// BrowseWordTemplate chooses a local .dotx via the native Windows file picker.
+// The selected path is stored only when the user saves Settings.
+func (a *App) BrowseWordTemplate() (string, error) {
+	if a.ctx == nil {
+		return "", errors.New("application is not ready")
+	}
+	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title:   "Choose Word template",
+		Filters: []runtime.FileFilter{{DisplayName: "Microsoft Word template (*.dotx)", Pattern: "*.dotx"}},
+	})
+}
+
+// wordLogoDialogOptions restricts the native picker to image types supported
+// by the existing DOCX image decoder (PNG, JPEG and GIF).
+func wordLogoDialogOptions() runtime.OpenDialogOptions {
+	return runtime.OpenDialogOptions{
+		Title: "Choose cover logo",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Supported images (*.png;*.jpg;*.jpeg;*.gif)", Pattern: "*.png;*.jpg;*.jpeg;*.gif"},
+			{DisplayName: "PNG images (*.png)", Pattern: "*.png"},
+			{DisplayName: "JPEG images (*.jpg;*.jpeg)", Pattern: "*.jpg;*.jpeg"},
+			{DisplayName: "GIF images (*.gif)", Pattern: "*.gif"},
+		},
+	}
+}
+
+// BrowseWordLogo opens a native Windows image picker. Selection only updates
+// the Settings form; the logo path persists when the user clicks Save.
+func (a *App) BrowseWordLogo() (string, error) {
+	if a.ctx == nil {
+		return "", errors.New("application is not ready")
+	}
+	return runtime.OpenFileDialog(a.ctx, wordLogoDialogOptions())
 }
 
 // WatcherStatus exposes bounded monitoring history without blocking document edits.
@@ -394,11 +449,16 @@ func (a *App) ExportDOCX(inputPath string) (string, error) {
 		return "", err
 	}
 
+	settings, err := a.store.settings()
+	if err != nil {
+		return "", err
+	}
 	result, err := transcode.ConvertFile(transcode.FileOptions{
 		InputPath:  absoluteInput,
 		OutputPath: outputPath,
 		Format:     transcode.FormatDOCX,
 		Creator:    appName,
+		DOCX:       settings.DOCX,
 	})
 	if err != nil {
 		return "", err

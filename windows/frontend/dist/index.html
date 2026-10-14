@@ -115,14 +115,24 @@
       </header>
 
       <div class="settings-body">
-        <label class="setting-field">
-          <span>Default document view</span>
-          <select id="defaultViewSelect">
-            <option value="preview">Preview</option>
-            <option value="source">Source</option>
-          </select>
-        </label>
-
+        <div class="pdf-settings-grid document-view-grid">
+          <label class="setting-field">
+            <span>Default document view</span>
+            <select id="defaultViewSelect">
+              <option value="preview">Preview</option>
+              <option value="source">Source</option>
+            </select>
+          </label>
+          <label class="setting-field">
+            <span>Recent document limit</span>
+            <select id="recentLimitSelect">
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+            </select>
+          </label>
+        </div>
         <label class="setting-check">
           <input id="rememberRecentCheckbox" type="checkbox">
           <span>
@@ -131,15 +141,34 @@
           </span>
         </label>
 
-        <label class="setting-field">
-          <span>Recent document limit</span>
-          <select id="recentLimitSelect">
-            <option value="5">5</option>
-            <option value="10">10</option>
-            <option value="15">15</option>
-            <option value="20">20</option>
-          </select>
-        </label>
+        <section class="pdf-settings" aria-labelledby="wordSettingsTitle">
+          <h3 id="wordSettingsTitle">Word document templates and branding</h3>
+          <p class="settings-note">Standard preserves the original appearance. Native uses minimal Word styles. Custom imports only validated .dotx styles and theme (not embedded master-page contents).</p>
+          <div class="pdf-settings-grid">
+            <label class="setting-field"><span>Word styling</span><select id="wordStyle"><option value="standard">MDTranscode Standard</option><option value="native">Word Native / Minimal</option><option value="custom">Custom .dotx template</option></select></label>
+            <label class="setting-field"><span>Paper size</span><select id="wordPaper"><option value="Letter">Letter</option><option value="A4">A4</option></select></label>
+          </div>
+          <label class="setting-field" for="wordTemplate"><span>Custom Word template (.dotx)</span></label>
+          <div class="path-picker"><input id="wordTemplate" type="text" spellcheck="false" autocomplete="off"><button id="wordBrowseTemplate" class="button secondary" type="button">Browse</button></div>
+          <div class="pdf-settings-grid">
+            <label class="setting-field"><span>Cover title</span><input type="text" id="wordCoverTitle" maxlength="500" placeholder="Optional"></label>
+            <label class="setting-field"><span>Cover subtitle</span><input type="text" id="wordSubtitle" maxlength="500" placeholder="Optional"></label>
+            <label class="setting-field"><span>Company</span><input type="text" id="wordCompany" maxlength="500" placeholder="Optional"></label>
+            <div class="setting-field">
+              <label for="wordLogoPath">Cover logo (local image)</label>
+              <div class="path-picker word-logo-picker">
+                <input type="text" id="wordLogoPath" spellcheck="false" autocomplete="off" placeholder="C:\...\logo.png" aria-label="Cover logo file path">
+                <button id="wordBrowseLogo" class="button secondary" type="button" aria-label="Browse for cover logo">Browse</button>
+              </div>
+            </div>
+            <label class="setting-field"><span>Page header</span><input type="text" id="wordHeader" maxlength="500" placeholder="Optional"></label>
+            <label class="setting-field"><span>Page footer</span><input type="text" id="wordFooter" maxlength="500" placeholder="Optional"></label>
+          </div>
+          <label class="setting-check"><input id="wordPageNumbers" type="checkbox"><span><strong>Page numbers</strong></span></label>
+          <label class="setting-check"><input id="wordTOC" type="checkbox"><span><strong>Table of contents field</strong><small>Headings are shown immediately; Word updates page numbers when fields refresh.</small></span></label>
+          <label class="setting-check"><input id="wordBreakH1" type="checkbox"><span><strong>Page break before each H1</strong></span></label>
+          <label class="setting-check"><input id="wordLandscape" type="checkbox"><span><strong>Landscape document</strong></span></label>
+        </section>
 
         <section class="pdf-settings" aria-labelledby="pdfSettingsTitle">
           <h3 id="pdfSettingsTitle">PDF export</h3>
@@ -206,6 +235,7 @@
         </section>
       </div>
 
+      <div id="settingsFeedback" class="settings-feedback hidden" role="status" aria-live="polite"></div>
       <footer class="settings-footer">
         <button id="settingsCancelButton" class="button secondary" type="button">Cancel</button>
         <button id="settingsSaveButton" class="button primary" type="button">Save settings</button>

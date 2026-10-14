@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/mdtranscode/mdtranscode/core-src/renderer/docx"
 	"github.com/mdtranscode/mdtranscode/core-src/renderer/pdf"
 	"github.com/mdtranscode/mdtranscode/core-src/transcode"
 	"strconv"
@@ -17,6 +18,7 @@ type cliOptions struct {
 	output string
 	format string
 	pdf    pdf.Options
+	word   docx.Options
 }
 
 func main() {
@@ -53,6 +55,26 @@ func parseArgs(args []string) (cliOptions, bool, error) {
 		switch {
 		case arg == "-h" || arg == "--help":
 			return options, true, nil
+		case arg == "--word-toc":
+			options.word.TOC = true
+		case arg == "--word-page-numbers":
+			options.word.PageNumbers = true
+		case arg == "--word-break-h1":
+			options.word.BreakBeforeH1 = true
+		case arg == "--word-landscape":
+			options.word.Landscape = true
+		case strings.HasPrefix(arg, "--word-"):
+			flag, value, hasEquals := strings.Cut(arg, "=")
+			if !hasEquals {
+				if i+1 >= len(args) {
+					return options, false, fmt.Errorf("%s requires a value", flag)
+				}
+				i++
+				value = args[i]
+			}
+			if err := setWordOption(&options, flag, value); err != nil {
+				return options, false, err
+			}
 		case arg == "--pdf-size" || arg == "--pdf-orientation" || arg == "--pdf-margin" || arg == "--pdf-header" || arg == "--pdf-footer":
 			if i+1 >= len(args) {
 				return options, false, fmt.Errorf("%s requires a value", arg)
@@ -115,6 +137,21 @@ func parseArgs(args []string) (cliOptions, bool, error) {
 		options.output = defaultOutputPath(options.input, options.format)
 	}
 
+	if options.format == "pdf" && (options.word != docx.Options{}) {
+		return options, false, errors.New("Word options require DOCX output")
+	}
+	if options.word.Style == "" {
+		options.word.Style = docx.StyleStandard
+	}
+	if options.word.TemplatePath != "" && options.word.Style != docx.StyleCustom {
+		return options, false, errors.New("--word-template requires --word-style custom")
+	}
+	if options.word.Style == docx.StyleCustom && options.word.TemplatePath == "" {
+		return options, false, errors.New("--word-style custom requires --word-template")
+	}
+	if options.word.Style != docx.StyleStandard && options.word.Style != docx.StyleNative && options.word.Style != docx.StyleCustom {
+		return options, false, errors.New("unsupported --word-style")
+	}
 	if options.format == "pdf" {
 		if _, err := pdf.Validate(options.pdf); err != nil {
 			return options, false, err
@@ -148,6 +185,31 @@ func setPDFOption(options *cliOptions, flag, value string) error {
 	return nil
 }
 
+func setWordOption(options *cliOptions, flag, value string) error {
+	switch flag {
+	case "--word-style":
+		options.word.Style = docx.StyleMode(value)
+	case "--word-template":
+		options.word.TemplatePath = value
+	case "--word-cover-title":
+		options.word.CoverTitle = value
+	case "--word-subtitle":
+		options.word.Subtitle = value
+	case "--word-company":
+		options.word.Company = value
+	case "--word-logo":
+		options.word.LogoPath = value
+	case "--word-header":
+		options.word.HeaderText = value
+	case "--word-footer":
+		options.word.FooterText = value
+	case "--word-paper":
+		options.word.PaperSize = value
+	default:
+		return fmt.Errorf("unknown Word option %q", flag)
+	}
+	return nil
+}
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "MDTranscode - turn Markdown into professional documents")
 	fmt.Fprintln(w)
@@ -159,6 +221,19 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "Options:")
 	fmt.Fprintln(w, "  --to FORMAT             Output format: docx, pdf")
 	fmt.Fprintln(w, "  -o, --output PATH       Explicit output path")
+	fmt.Fprintln(w, "  --word-style MODE       standard (default), native, custom")
+	fmt.Fprintln(w, "  --word-template FILE    Required with --word-style custom (.dotx)")
+	fmt.Fprintln(w, "  --word-cover-title TXT  Optional title page")
+	fmt.Fprintln(w, "  --word-subtitle TXT     Title page subtitle")
+	fmt.Fprintln(w, "  --word-company NAME     Title page company")
+	fmt.Fprintln(w, "  --word-logo FILE       Local cover logo image")
+	fmt.Fprintln(w, "  --word-header TEXT      Word document header")
+	fmt.Fprintln(w, "  --word-footer TEXT      Word document footer")
+	fmt.Fprintln(w, "  --word-page-numbers     Add Word footer page numbers")
+	fmt.Fprintln(w, "  --word-toc              Insert updatable Word TOC field")
+	fmt.Fprintln(w, "  --word-break-h1         New page before each H1")
+	fmt.Fprintln(w, "  --word-landscape        Landscape document orientation")
+	fmt.Fprintln(w, "  --word-paper SIZE       Letter (default) or A4")
 	fmt.Fprintln(w, "  --pdf-size SIZE         Letter or A4")
 	fmt.Fprintln(w, "  --pdf-orientation DIR   portrait or landscape")
 	fmt.Fprintln(w, "  --pdf-margin MM         Uniform margins (5..60 mm)")
@@ -180,6 +255,7 @@ func convert(options cliOptions) error {
 		OutputPath: options.output,
 		Format:     options.format,
 		PDF:        options.pdf,
+		DOCX:       options.word,
 	})
 	return err
 }

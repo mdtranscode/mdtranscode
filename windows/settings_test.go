@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/mdtranscode/mdtranscode/core-src/renderer/docx"
 	"os"
 	"path/filepath"
 	"testing"
@@ -260,5 +261,42 @@ func TestPDFSettingsDefaultsAndUpgrade(t *testing.T) {
 	reloaded, err := store.settings()
 	if err != nil || reloaded.PDF.PageSize != "A4" || reloaded.PDF.MarginLeft != 12 {
 		t.Fatalf("PDF settings persistence: %+v %v", reloaded.PDF, err)
+	}
+}
+
+func TestWordSettingsDefaultsMigrationAndPersistence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	store := newStateStore(path)
+	defaults, err := store.settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaults.DOCX.Style != docx.StyleStandard {
+		t.Fatalf("default Word style = %q", defaults.DOCX.Style)
+	}
+	next, err := store.saveSettings(AppSettings{
+		DefaultView: "preview", RememberRecentFiles: true, RecentFilesLimit: 10,
+		DOCX: docx.Options{Style: docx.StyleNative, CoverTitle: "Client Report", Company: "Example Ltd", HeaderText: "Internal", FooterText: "Confidential", TOC: true, PageNumbers: true, Landscape: true, PaperSize: "A4"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := store.settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual.DOCX != next.DOCX {
+		t.Fatalf("Word options not round-tripped: got %+v, want %+v", actual.DOCX, next.DOCX)
+	}
+	// Restore a prior schema version; Word settings must migrate to Standard.
+	if err := os.WriteFile(path, []byte(`{"version":5,"settings":{"defaultView":"preview","rememberRecentFiles":true,"recentFilesLimit":10}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := store.settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if migrated.DOCX.Style != docx.StyleStandard {
+		t.Fatalf("v5 Word default migration = %q", migrated.DOCX.Style)
 	}
 }

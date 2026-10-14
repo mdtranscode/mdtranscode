@@ -274,3 +274,53 @@ func TestNormalizePDFOutputPath(t *testing.T) {
 		}
 	}
 }
+
+// A native image picker is offered for the saved Word cover logo path.
+// Its filter must not advertise unsupported BMP/WebP/SVG formats.
+func TestWordLogoDialogOptions(t *testing.T) {
+	options := wordLogoDialogOptions()
+	if options.Title != "Choose cover logo" {
+		t.Fatalf("unexpected logo picker title: %q", options.Title)
+	}
+	if len(options.Filters) != 4 {
+		t.Fatalf("logo picker has %d filters; want 4", len(options.Filters))
+	}
+	patterns := []string{"*.png;*.jpg;*.jpeg;*.gif", "*.png", "*.jpg;*.jpeg", "*.gif"}
+	for i, pattern := range patterns {
+		if options.Filters[i].Pattern != pattern {
+			t.Fatalf("filter %d = %q; want %q", i, options.Filters[i].Pattern, pattern)
+		}
+	}
+}
+
+// A template warning may be ignored by the renderer but must remain visible
+// in Settings, directly above its pinned Save/Cancel controls. Conversion
+// failures must not display underneath the footer as a toast.
+func TestWordTemplateSettingsWarningAndErrorLayout(t *testing.T) {
+	html, err := os.ReadFile("frontend/dist/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css, err := os.ReadFile("frontend/dist/app.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js, err := os.ReadFile("frontend/dist/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	markup := string(html)
+	if !strings.Contains(markup, `id="settingsFeedback"`) || strings.Index(markup, `id="settingsFeedback"`) > strings.Index(markup, `class="settings-footer"`) {
+		t.Fatal("Settings validation banner missing or not positioned above Save/Cancel")
+	}
+	for _, fragment := range []string{`.settings-page .settings-feedback`, `.settings-page .settings-feedback.warning`} {
+		if !strings.Contains(string(css), fragment) {
+			t.Errorf("missing Settings notification style %s", fragment)
+		}
+	}
+	for _, fragment := range []string{`App.InspectWordTemplate`, `inspectSelectedWordTemplate`, `showSettingsFeedback(message, "error")`, `Settings saved. Word template warning:`} {
+		if !strings.Contains(string(js), fragment) {
+			t.Errorf("missing Settings warning handling %s", fragment)
+		}
+	}
+}
